@@ -11,6 +11,9 @@ import (
 const OrderStartedSignalName = "order-started"
 const OrderStartToCompleteDeadline = 15 * time.Minute
 
+const OrderLineItemTypeFood = "food"
+const OrderLineItemTypeBevarage = "beverage"
+
 type OrderLineItem struct {
 	Name  string
 	Type  string
@@ -23,6 +26,12 @@ type OrderWorkflowInput struct {
 
 type OrderWorkflowStatus struct {
 	subOrders map[string]workflow.Future
+}
+
+func NewOrderWorkflowStatus() *OrderWorkflowStatus {
+	return &OrderWorkflowStatus{
+		subOrders: make(map[string]workflow.Future),
+	}
 }
 
 func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLineItem) workflow.CancelFunc {
@@ -46,7 +55,7 @@ func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLi
 	for t, items := range itemsByType {
 		var subOrder workflow.Future
 		switch t {
-		case "food":
+		case OrderLineItemTypeFood:
 			subOrder = workflow.ExecuteChildWorkflow(
 				childCtx,
 				KitchenOrder,
@@ -54,7 +63,7 @@ func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLi
 					Items: items,
 				},
 			)
-		case "beverage":
+		case OrderLineItemTypeBevarage:
 			subOrder = workflow.ExecuteChildWorkflow(
 				childCtx,
 				BaristaOrder,
@@ -118,7 +127,7 @@ type OrderWorfklowResult struct {
 }
 
 func Order(ctx workflow.Context, input *OrderWorkflowInput) (*OrderWorfklowResult, error) {
-	status := OrderWorkflowStatus{}
+	status := NewOrderWorkflowStatus()
 
 	cancelSubOrdersFunc := status.sendSubOrders(ctx, input.Items)
 	err := status.waitForSubOrders(ctx, cancelSubOrdersFunc)

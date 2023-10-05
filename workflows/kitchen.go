@@ -12,6 +12,7 @@ const KitchenOrderItemStartedSignalName = "kitchen-item-started"
 const KitchenOrderItemCompletedSignalName = "kitchen-item-completed"
 const KitchenOrderItemFailedSignalName = "kitchen-item-failed"
 
+const KitchenOrderItemStatusPending = "pending"
 const KitchenOrderItemStatusStarted = "started"
 const KitchenOrderItemStatusCompleted = "completed"
 const KitchenOrderItemStatusFailed = "failed"
@@ -61,7 +62,7 @@ func NewKitchenOrderWorkflowStatus(items []OrderLineItem) *KitchenOrderWorfklowS
 	var kitchenItems []KitchenOrderLineItem
 	for _, li := range items {
 		for i := 0; i < li.Count; i++ {
-			kitchenItems = append(kitchenItems, KitchenOrderLineItem{Name: li.Name})
+			kitchenItems = append(kitchenItems, KitchenOrderLineItem{Name: li.Name, Status: KitchenOrderItemStatusPending})
 		}
 	}
 
@@ -134,11 +135,14 @@ func (s *KitchenOrderWorfklowStatus) waitForItems(ctx workflow.Context) error {
 func KitchenOrder(ctx workflow.Context, input *KitchenOrderWorkflowInput) (*KitchenOrderWorfklowResult, error) {
 	status := NewKitchenOrderWorkflowStatus(input.Items)
 
-	workflow.SetQueryHandler(ctx, KitchenOrderStatusQueryName, func() *KitchenOrderWorfklowStatus {
-		return status
+	err := workflow.SetQueryHandler(ctx, KitchenOrderStatusQueryName, func() (*KitchenOrderWorfklowStatus, error) {
+		return status, nil
 	})
+	if err != nil {
+		return &KitchenOrderWorfklowResult{}, err
+	}
 
-	err := status.waitForItems(ctx)
+	err = status.waitForItems(ctx)
 
 	return &KitchenOrderWorfklowResult{}, err
 }

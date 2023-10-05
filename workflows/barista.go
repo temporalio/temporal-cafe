@@ -12,6 +12,7 @@ const BaristaOrderItemStartedSignalName = "barista-item-started"
 const BaristaOrderItemCompletedSignalName = "barista-item-completed"
 const BaristaOrderItemFailedSignalName = "barista-item-failed"
 
+const BaristaOrderItemStatusPending = "pending"
 const BaristaOrderItemStatusStarted = "started"
 const BaristaOrderItemStatusCompleted = "completed"
 const BaristaOrderItemStatusFailed = "failed"
@@ -61,7 +62,7 @@ func NewBaristaOrderWorkflowStatus(items []OrderLineItem) *BaristaOrderWorfklowS
 	var baristaItems []BaristaOrderLineItem
 	for _, li := range items {
 		for i := 0; i < li.Count; i++ {
-			baristaItems = append(baristaItems, BaristaOrderLineItem{Name: li.Name})
+			baristaItems = append(baristaItems, BaristaOrderLineItem{Name: li.Name, Status: BaristaOrderItemStatusPending})
 		}
 	}
 
@@ -134,11 +135,14 @@ func (s *BaristaOrderWorfklowStatus) waitForItems(ctx workflow.Context) error {
 func BaristaOrder(ctx workflow.Context, input *BaristaOrderWorkflowInput) (*BaristaOrderWorfklowResult, error) {
 	status := NewBaristaOrderWorkflowStatus(input.Items)
 
-	workflow.SetQueryHandler(ctx, BaristaOrderStatusQueryName, func() *BaristaOrderWorfklowStatus {
-		return status
+	err := workflow.SetQueryHandler(ctx, BaristaOrderStatusQueryName, func() (*BaristaOrderWorfklowStatus, error) {
+		return status, nil
 	})
+	if err != nil {
+		return &BaristaOrderWorfklowResult{}, err
+	}
 
-	err := status.waitForItems(ctx)
+	err = status.waitForItems(ctx)
 
 	return &BaristaOrderWorfklowResult{}, err
 }
