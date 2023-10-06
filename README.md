@@ -14,4 +14,4 @@ Please feel free to suggest features or patterns you would like us to cover by f
 
 ## Features
 
-* [Workflow Update](#1): Demonstrates the use of the Workflow Update feature instead of using Signals. Of particular note here is the ability to validate the contents of the update and provide a synchronous response from the client's point of view.
+* [Workflow Update](https://github.com/temporalio/temporal-cafe/pull/1): Demonstrates the use of the Workflow Update feature instead of using Signals. Of particular note here is the ability to validate the contents of the update and provide a synchronous response from the client's point of view.
