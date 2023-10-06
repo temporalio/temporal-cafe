@@ -52,7 +52,7 @@ func (s *BaristaOrderWorfklowStatus) signalOrderStarted(ctx workflow.Context) {
 		return
 	}
 
-	we := workflow.GetInfo(ctx).WorkflowExecution
+	we := workflow.GetInfo(ctx).ParentWorkflowExecution
 	workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, OrderStartedSignalName, nil)
 
 	s.startNotified = true
@@ -70,11 +70,21 @@ func NewBaristaOrderWorkflowStatus(items []OrderLineItem) *BaristaOrderWorfklowS
 }
 
 func (s *BaristaOrderWorfklowStatus) updateItem(ctx workflow.Context, line int, status string) {
-	if line >= len(s.Items) {
+	if line < 1 || line > len(s.Items) {
 		return
 	}
 
-	s.Items[line].Status = status
+	switch status {
+	case BaristaOrderItemStatusPending:
+	case BaristaOrderItemStatusStarted:
+	case BaristaOrderItemStatusFailed:
+	case BaristaOrderItemStatusCompleted:
+	default:
+		return
+	}
+
+	// Adjust item number because array is 0-indexed.
+	s.Items[line-1].Status = status
 }
 
 func (s *BaristaOrderWorfklowStatus) checkForOrderCompleted() {
@@ -88,28 +98,30 @@ func (s *BaristaOrderWorfklowStatus) checkForOrderCompleted() {
 
 func (s *BaristaOrderWorfklowStatus) waitForItems(ctx workflow.Context) error {
 	sel := workflow.NewSelector(ctx)
-	ch := workflow.GetSignalChannel(ctx, BaristaOrderItemStartedSignalName)
 
 	var err error
 
 	// Listen for signals from Barista staff
+	ch := workflow.GetSignalChannel(ctx, BaristaOrderItemStartedSignalName)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
 		var startedSignal BaristaOrderItemStartedSignal
-		c.Receive(ctx, startedSignal)
+		c.Receive(ctx, &startedSignal)
 
 		s.updateItem(ctx, startedSignal.Line, BaristaOrderItemStatusStarted)
 		s.signalOrderStarted(ctx)
 	})
+	ch = workflow.GetSignalChannel(ctx, BaristaOrderItemCompletedSignalName)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
 		var completedSignal BaristaOrderItemCompletedSignal
-		c.Receive(ctx, completedSignal)
+		c.Receive(ctx, &completedSignal)
 
 		s.updateItem(ctx, completedSignal.Line, BaristaOrderItemStatusCompleted)
 		s.checkForOrderCompleted()
 	})
+	ch = workflow.GetSignalChannel(ctx, BaristaOrderItemFailedSignalName)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
 		var failedSignal BaristaOrderItemFailedSignal
-		c.Receive(ctx, failedSignal)
+		c.Receive(ctx, &failedSignal)
 
 		s.updateItem(ctx, failedSignal.Line, BaristaOrderItemStatusFailed)
 		err = fmt.Errorf("item %s failed", s.Items[failedSignal.Line].Name)

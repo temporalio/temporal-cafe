@@ -12,7 +12,7 @@ const OrderStartedSignalName = "order-started"
 const OrderStartToCompleteDeadline = 15 * time.Minute
 
 const OrderLineItemTypeFood = "food"
-const OrderLineItemTypeBevarage = "beverage"
+const OrderLineItemTypeBeverage = "beverage"
 
 type OrderLineItem struct {
 	Name  string
@@ -22,6 +22,9 @@ type OrderLineItem struct {
 
 type OrderWorkflowInput struct {
 	Items []OrderLineItem
+}
+
+type OrderWorfklowResult struct {
 }
 
 type OrderWorkflowStatus struct {
@@ -53,32 +56,23 @@ func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLi
 	})
 
 	for t, items := range itemsByType {
-		var subOrder workflow.Future
+		var cw interface{}
+		var input interface{}
 		switch t {
 		case OrderLineItemTypeFood:
-			subOrder = workflow.ExecuteChildWorkflow(
-				childCtx,
-				KitchenOrder,
-				KitchenOrderWorkflowInput{
-					Items: items,
-				},
-			)
-		case OrderLineItemTypeBevarage:
-			subOrder = workflow.ExecuteChildWorkflow(
-				childCtx,
-				BaristaOrder,
-				BaristaOrderWorkflowInput{
-					Items: items,
-				},
-			)
+			cw = KitchenOrder
+			input = KitchenOrderWorkflowInput{Items: items}
+		case OrderLineItemTypeBeverage:
+			cw = BaristaOrder
+			input = BaristaOrderWorkflowInput{Items: items}
 		}
-		s.subOrders[t] = subOrder
+		s.subOrders[t] = workflow.ExecuteChildWorkflow(childCtx, cw, input)
 	}
 
 	return cancelChildren
 }
 
-func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context, cancelSubOrders workflow.CancelFunc) error {
+func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context) error {
 	var err error
 	var orderTimer workflow.Future
 
@@ -87,8 +81,9 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context, cancelSubOrd
 	// Handle SubOrder completion. We only care if there was an error here,
 	// there is no meaningful result from SubOrders currently.
 	for t, v := range s.subOrders {
+		tt := t
 		sel.AddFuture(v, func(f workflow.Future) {
-			delete(s.subOrders, t)
+			delete(s.subOrders, tt)
 			err = f.Get(ctx, nil)
 		})
 	}
@@ -115,7 +110,6 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context, cancelSubOrd
 	for len(s.subOrders) > 0 {
 		sel.Select(ctx)
 		if err != nil {
-			cancelSubOrders()
 			return err
 		}
 	}
@@ -123,14 +117,14 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context, cancelSubOrd
 	return nil
 }
 
-type OrderWorfklowResult struct {
-}
-
 func Order(ctx workflow.Context, input *OrderWorkflowInput) (*OrderWorfklowResult, error) {
 	status := NewOrderWorkflowStatus()
 
-	cancelSubOrdersFunc := status.sendSubOrders(ctx, input.Items)
-	err := status.waitForSubOrders(ctx, cancelSubOrdersFunc)
+	cancelSubOrders := status.sendSubOrders(ctx, input.Items)
+	err := status.waitForSubOrders(ctx)
+	if err != nil {
+		cancelSubOrders()
+	}
 
 	return &OrderWorfklowResult{}, err
 }

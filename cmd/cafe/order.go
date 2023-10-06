@@ -29,7 +29,7 @@ var orderCmd = &cobra.Command{
 			items = append(items, workflows.OrderLineItem{Type: workflows.OrderLineItemTypeFood, Name: v, Count: 1})
 		}
 		for _, v := range beverageItems {
-			items = append(items, workflows.OrderLineItem{Type: workflows.OrderLineItemTypeBevarage, Name: v, Count: 1})
+			items = append(items, workflows.OrderLineItem{Type: workflows.OrderLineItemTypeBeverage, Name: v, Count: 1})
 		}
 
 		order := workflows.OrderWorkflowInput{
@@ -48,7 +48,7 @@ var orderCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Order %s-%s created.\n", we.GetID(), we.GetRunID())
+		fmt.Printf("Order %s created.\n", we.GetID())
 
 		return nil
 	},
