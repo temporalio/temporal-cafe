@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/temporalio/temporal-cafe/activities"
 	workflowEnums "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 )
@@ -21,32 +22,50 @@ type OrderLineItem struct {
 }
 
 type OrderWorkflowInput struct {
-	Items []OrderLineItem
+	PaymentToken string
+	Items        []OrderLineItem
 }
 
 type OrderWorfklowResult struct {
 }
 
 type OrderWorkflowStatus struct {
-	subOrders map[string]workflow.Future
+	subOrders map[string]workflow.ChildWorkflowFuture
 }
 
-func NewOrderWorkflowStatus() *OrderWorkflowStatus {
+func NewOrderWorkflow() *OrderWorkflowStatus {
 	return &OrderWorkflowStatus{
-		subOrders: make(map[string]workflow.Future),
+		subOrders: make(map[string]workflow.ChildWorkflowFuture),
 	}
+}
+
+func (s OrderWorkflowStatus) processPayment(ctx workflow.Context, token string) (activities.ProcessPaymentResult, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+	})
+
+	var result activities.ProcessPaymentResult
+	err := workflow.ExecuteActivity(ctx, activities.ProcessPayment, activities.ProcessPaymentInput{Token: token}).Get(ctx, &result)
+
+	return result, err
+}
+
+func (s OrderWorkflowStatus) refundPayment(ctx workflow.Context, payment activities.Payment) error {
+	ctx, _ = workflow.NewDisconnectedContext(ctx)
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+	})
+
+	err := workflow.ExecuteActivity(ctx, activities.ProcessPaymentRefund, activities.ProcessPaymentRefundInput{Payment: payment}).Get(ctx, nil)
+
+	return err
 }
 
 func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLineItem) workflow.CancelFunc {
 	itemsByType := make(map[string][]OrderLineItem)
 
 	for _, v := range items {
-		if itemsByType[v.Type] == nil {
-			itemsByType[v.Type] = []OrderLineItem{}
-		}
-		for i := 0; i < v.Count; i++ {
-			itemsByType[v.Type] = append(itemsByType[v.Type], v)
-		}
+		itemsByType[v.Type] = append(itemsByType[v.Type], v)
 	}
 
 	childCtx, cancelChildren := workflow.WithCancel(ctx)
@@ -118,10 +137,20 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context) error {
 }
 
 func Order(ctx workflow.Context, input *OrderWorkflowInput) (*OrderWorfklowResult, error) {
-	status := NewOrderWorkflowStatus()
+	wf := NewOrderWorkflow()
 
-	cancelSubOrders := status.sendSubOrders(ctx, input.Items)
-	err := status.waitForSubOrders(ctx)
+	p, err := wf.processPayment(ctx, input.PaymentToken)
+	if err != nil {
+		return &OrderWorfklowResult{}, err
+	}
+	defer func() {
+		if err != nil {
+			wf.refundPayment(ctx, p.Payment)
+		}
+	}()
+
+	cancelSubOrders := wf.sendSubOrders(ctx, input.Items)
+	err = wf.waitForSubOrders(ctx)
 	if err != nil {
 		cancelSubOrders()
 	}
