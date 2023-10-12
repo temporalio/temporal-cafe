@@ -13,6 +13,7 @@ import (
 	sdktally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/worker"
 
+	"github.com/temporalio/temporal-cafe/activities"
 	"github.com/temporalio/temporal-cafe/workflows"
 )
 
@@ -31,12 +32,17 @@ var workerCmd = &cobra.Command{
 			log.Fatalf("client error: %v", err)
 		}
 		defer c.Close()
+		a := activities.Activities{Client: c}
 
 		w := worker.New(c, "cafe", worker.Options{})
 
 		w.RegisterWorkflow(workflows.Order)
 		w.RegisterWorkflow(workflows.KitchenOrder)
 		w.RegisterWorkflow(workflows.BaristaOrder)
+		w.RegisterActivity(a.ProcessPayment)
+		w.RegisterActivity(a.ProcessPaymentRefund)
+		w.RegisterWorkflow(workflows.Customer)
+		w.RegisterActivity(a.AddLoyaltyPoints)
 
 		err = w.Run(worker.InterruptCh())
 		if err != nil {

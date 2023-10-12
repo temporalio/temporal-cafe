@@ -5,29 +5,12 @@ import (
 	"time"
 
 	"github.com/temporalio/temporal-cafe/activities"
+	"github.com/temporalio/temporal-cafe/api"
 	workflowEnums "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 )
 
-const OrderStartedSignalName = "order-started"
 const OrderStartToCompleteDeadline = 15 * time.Minute
-
-const OrderLineItemTypeFood = "food"
-const OrderLineItemTypeBeverage = "beverage"
-
-type OrderLineItem struct {
-	Name  string
-	Type  string
-	Count int
-}
-
-type OrderWorkflowInput struct {
-	PaymentToken string
-	Items        []OrderLineItem
-}
-
-type OrderWorfklowResult struct {
-}
 
 type OrderWorkflowStatus struct {
 	subOrders map[string]workflow.ChildWorkflowFuture
@@ -45,7 +28,7 @@ func (s OrderWorkflowStatus) processPayment(ctx workflow.Context, token string) 
 	})
 
 	var result activities.ProcessPaymentResult
-	err := workflow.ExecuteActivity(ctx, activities.ProcessPayment, activities.ProcessPaymentInput{Token: token}).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, a.ProcessPayment, activities.ProcessPaymentInput{Token: token}).Get(ctx, &result)
 
 	return result, err
 }
@@ -56,13 +39,13 @@ func (s OrderWorkflowStatus) refundPayment(ctx workflow.Context, payment activit
 		StartToCloseTimeout: 5 * time.Minute,
 	})
 
-	err := workflow.ExecuteActivity(ctx, activities.ProcessPaymentRefund, activities.ProcessPaymentRefundInput{Payment: payment}).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, a.ProcessPaymentRefund, activities.ProcessPaymentRefundInput{Payment: payment}).Get(ctx, nil)
 
 	return err
 }
 
-func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLineItem) workflow.CancelFunc {
-	itemsByType := make(map[string][]OrderLineItem)
+func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []api.OrderLineItem) workflow.CancelFunc {
+	itemsByType := make(map[string][]api.OrderLineItem)
 
 	for _, v := range items {
 		itemsByType[v.Type] = append(itemsByType[v.Type], v)
@@ -78,10 +61,10 @@ func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []OrderLi
 		var cw interface{}
 		var input interface{}
 		switch t {
-		case OrderLineItemTypeFood:
+		case api.OrderLineItemTypeFood:
 			cw = KitchenOrder
 			input = KitchenOrderWorkflowInput{Items: items}
-		case OrderLineItemTypeBeverage:
+		case api.OrderLineItemTypeBeverage:
 			cw = BaristaOrder
 			input = BaristaOrderWorkflowInput{Items: items}
 		}
@@ -109,7 +92,7 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context) error {
 
 	// Set a timer once a SubOrder is started to ensure that everything is completed
 	// within a specific duration.
-	ch := workflow.GetSignalChannel(ctx, OrderStartedSignalName)
+	ch := workflow.GetSignalChannel(ctx, api.OrderStartedSignalName)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
 		c.Receive(ctx, nil)
 
@@ -136,12 +119,32 @@ func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context) error {
 	return nil
 }
 
-func Order(ctx workflow.Context, input *OrderWorkflowInput) (*OrderWorfklowResult, error) {
+func (wf *OrderWorkflowStatus) itemCount(input *api.OrderWorkflowInput) uint {
+	i := 0
+	for _, item := range input.Items {
+		i += item.Count
+	}
+
+	return uint(i)
+}
+
+func (wf *OrderWorkflowStatus) addLoyaltyPoints(ctx workflow.Context, input *api.OrderWorkflowInput) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+	})
+
+	items := wf.itemCount(input)
+	err := workflow.ExecuteActivity(ctx, a.AddLoyaltyPoints, activities.AddLoyaltyPointsInput{Email: input.Email, Points: items}).Get(ctx, nil)
+
+	return err
+}
+
+func Order(ctx workflow.Context, input *api.OrderWorkflowInput) (*api.OrderWorfklowResult, error) {
 	wf := NewOrderWorkflow()
 
 	p, err := wf.processPayment(ctx, input.PaymentToken)
 	if err != nil {
-		return &OrderWorfklowResult{}, err
+		return &api.OrderWorfklowResult{}, err
 	}
 	defer func() {
 		if err != nil {
@@ -153,7 +156,12 @@ func Order(ctx workflow.Context, input *OrderWorkflowInput) (*OrderWorfklowResul
 	err = wf.waitForSubOrders(ctx)
 	if err != nil {
 		cancelSubOrders()
+		return &api.OrderWorfklowResult{}, err
 	}
 
-	return &OrderWorfklowResult{}, err
+	if input.Email != "" {
+		_ = wf.addLoyaltyPoints(ctx, input)
+	}
+
+	return &api.OrderWorfklowResult{}, nil
 }

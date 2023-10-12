@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/workflows"
+	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/client"
 )
 
@@ -24,15 +24,15 @@ var orderCmd = &cobra.Command{
 		}
 		defer c.Close()
 
-		items := []workflows.OrderLineItem{}
+		items := []api.OrderLineItem{}
 		for _, v := range foodItems {
-			items = append(items, workflows.OrderLineItem{Type: workflows.OrderLineItemTypeFood, Name: v, Count: 1})
+			items = append(items, api.OrderLineItem{Type: api.OrderLineItemTypeFood, Name: v, Count: 1})
 		}
 		for _, v := range beverageItems {
-			items = append(items, workflows.OrderLineItem{Type: workflows.OrderLineItemTypeBeverage, Name: v, Count: 1})
+			items = append(items, api.OrderLineItem{Type: api.OrderLineItemTypeBeverage, Name: v, Count: 1})
 		}
 
-		order := workflows.OrderWorkflowInput{
+		order := api.OrderWorkflowInput{
 			Items: items,
 		}
 

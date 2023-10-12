@@ -1,79 +1,54 @@
 package workflows
 
 import (
-	"fmt"
-
+	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/workflow"
 )
-
-const CustomerPointsBalanceQueryName = "customer-points-balance"
-const CustomerPointsAddSignalName = "customer-points-add"
-
-type CustomerPointsBalanceQuery struct {
-	Points uint
-}
-
-type CustomerPointsAddSignal struct {
-	Points uint
-}
-
-type CustomerWorkflowInput struct {
-	Email string
-	State *CustomerWorkflowState
-}
-
-type CustomerWorkflowState struct {
-	Points uint
-}
 
 // CustomerStartingBalance is the number of points to credit a loyalty account on signup
 const CustomerStartingBalance = 100
 
 // NewCustomerWorkflowState creates a workflow state
-func NewCustomerWorkflowState(input *CustomerWorkflowInput) *CustomerWorkflowState {
-	if input.State == nil {
-		input.State = &CustomerWorkflowState{Points: CustomerStartingBalance}
+func NewCustomerWorkflowState(state *api.CustomerWorkflowState) *api.CustomerWorkflowState {
+	if state != nil {
+		return state
 	}
 
-	return input.State
+	return &api.CustomerWorkflowState{Points: CustomerStartingBalance}
 }
 
-func (wf *CustomerWorkflowState) handleEvents(ctx workflow.Context) error {
-	ch := workflow.GetSignalChannel(ctx, CustomerPointsAddSignalName)
+func handleEvents(ctx workflow.Context, state *api.CustomerWorkflowState) error {
+	ch := workflow.GetSignalChannel(ctx, api.CustomerPointsAddSignalName)
 	s := workflow.NewSelector(ctx)
 
 	s.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var signal CustomerPointsAddSignal
+		var signal api.CustomerPointsAddSignal
 		c.Receive(ctx, &signal)
 
-		wf.Points += signal.Points
+		state.Points += signal.Points
 	})
 
 	for {
-		fmt.Printf("select: %v\n", workflow.GetInfo(ctx).GetContinueAsNewSuggested())
 		s.Select(ctx)
 		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() {
 			break
 		}
 	}
 	for s.HasPending() {
-		fmt.Printf("draining\n")
 		s.Select(ctx)
 	}
 
 	return nil
 }
 
-func Customer(ctx workflow.Context, input *CustomerWorkflowInput) error {
-	wf := NewCustomerWorkflowState(input)
+func Customer(ctx workflow.Context, input *api.CustomerWorkflowInput, state *api.CustomerWorkflowState) error {
+	wf := NewCustomerWorkflowState(state)
 
-	workflow.SetQueryHandler(ctx, CustomerPointsBalanceQueryName, func() (*CustomerPointsBalanceQuery, error) {
-		return &CustomerPointsBalanceQuery{Points: wf.Points}, nil
+	workflow.SetQueryHandler(ctx, api.CustomerPointsBalanceQueryName, func() (*api.CustomerPointsBalanceQuery, error) {
+		return &api.CustomerPointsBalanceQuery{Points: wf.Points}, nil
 	})
 
-	wf.handleEvents(ctx)
+	handleEvents(ctx, wf)
 
-	input.State = wf
-
-	return workflow.NewContinueAsNewError(ctx, Customer, input)
+	return workflow.NewContinueAsNewError(ctx, Customer, input, wf)
 }

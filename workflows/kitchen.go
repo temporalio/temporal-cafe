@@ -3,6 +3,7 @@ package workflows
 import (
 	"fmt"
 
+	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -23,7 +24,7 @@ type KitchenOrderLineItem struct {
 }
 
 type KitchenOrderWorkflowInput struct {
-	Items []OrderLineItem
+	Items []api.OrderLineItem
 }
 
 type KitchenOrderItemStartedSignal struct {
@@ -53,12 +54,12 @@ func (s *KitchenOrderWorfklowStatus) signalOrderStarted(ctx workflow.Context) {
 	}
 
 	we := workflow.GetInfo(ctx).ParentWorkflowExecution
-	workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, OrderStartedSignalName, nil)
+	workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, api.OrderStartedSignalName, nil)
 
 	s.startNotified = true
 }
 
-func NewKitchenOrderWorkflowStatus(items []OrderLineItem) *KitchenOrderWorfklowStatus {
+func NewKitchenOrderWorkflowStatus(items []api.OrderLineItem) *KitchenOrderWorfklowStatus {
 	var kitchenItems []KitchenOrderLineItem
 	for _, li := range items {
 		for i := 0; i < li.Count; i++ {
