@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
+var email string
 var foodItems []string
 var beverageItems []string
 
@@ -33,6 +34,7 @@ var orderCmd = &cobra.Command{
 		}
 
 		order := api.OrderWorkflowInput{
+			Email: email,
 			Items: items,
 		}
 
@@ -55,6 +57,7 @@ var orderCmd = &cobra.Command{
 }
 
 func init() {
+	orderCmd.Flags().StringVarP(&email, "email", "e", "", "Email")
 	orderCmd.Flags().StringArrayVarP(&foodItems, "food", "f", []string{}, "Food")
 	orderCmd.Flags().StringArrayVarP(&beverageItems, "beverage", "b", []string{}, "Beverage")
 
