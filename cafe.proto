@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package temporalio.cafe;
+
+option go_package = "github.com/temporalio/temporal-cafe/api";
+import "google/protobuf/empty.proto";
+
+service Cafe {
+  rpc Order(OrderInput) returns (OrderResult) {}
+  rpc OrderFulfilmentStartedSignal(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  rpc KitchenOrder(KitchenOrderInput) returns (KitchenOrderResult) {}
+  rpc KitchenOrderStatusQuery(google.protobuf.Empty) returns (KitchenOrderStatus) {}
+  rpc KitchenOrderItemStatusSignal(KitchenOrderItemStatusUpdate) returns (google.protobuf.Empty) {}
+  
+  rpc BaristaOrder(BaristaOrderInput) returns (BaristaOrderResult) {}
+  rpc BaristaOrderStatusQuery(google.protobuf.Empty) returns (BaristaOrderStatus) {}
+  rpc BaristaOrderItemStatusSignal(BaristaOrderItemStatusUpdate) returns (google.protobuf.Empty) {}
+
+  rpc CustomerLoyaltyPointsEarnedSignal(CustomerLoyaltyPointsEarned) returns (google.protobuf.Empty) {}
+  rpc CustomerLoyaltyPointsBalanceQuery(CustomerLoyaltyPointsBalance) returns (CustomerLoyaltyPointsBalance) {}
+}
+
+enum ProductType {
+  PRODUCT_TYPE_UNKNOWN = 0;
+  PRODUCT_TYPE_FOOD = 1;
+  PRODUCT_TYPE_BEVERAGE = 2;
+}
+
+message OrderLineItem {
+  ProductType type = 1;
+  string name = 2;
+  uint32 price = 3;
+  uint32 count = 4;
+}
+
+message OrderInput {
+  string email = 1;
+  string payment_token = 2;
+  repeated OrderLineItem items = 3;
+}
+
+message OrderResult {}
+
+enum KitchenOrderItemStatus {
+  KITCHEN_ORDER_ITEM_STATUS_PENDING = 0;
+  KITCHEN_ORDER_ITEM_STATUS_STARTED = 1;
+  KITCHEN_ORDER_ITEM_STATUS_COMPLETED = 2;
+  KITCHEN_ORDER_ITEM_STATUS_FAILED = 3;
+}
+
+message KitchenOrderLineItem {
+  string name = 1;
+  KitchenOrderItemStatus status = 2;
+}
+
+message KitchenOrderInput {
+  repeated OrderLineItem items = 1;
+}
+
+message KitchenOrderItemStatusUpdate {
+  uint32 line = 1;
+  KitchenOrderItemStatus status = 2;
+}
+
+message KitchenOrderStatus {
+  bool open = 1;
+  repeated KitchenOrderLineItem items = 2;
+}
+
+message KitchenOrderResult {}
+
+enum BaristaOrderItemStatus {
+  BARISTA_ORDER_ITEM_STATUS_PENDING = 0;
+  BARISTA_ORDER_ITEM_STATUS_STARTED = 1;
+  BARISTA_ORDER_ITEM_STATUS_COMPLETED = 2;
+  BARISTA_ORDER_ITEM_STATUS_FAILED = 3;
+}
+
+message BaristaOrderLineItem {
+  string name = 1;
+  BaristaOrderItemStatus status = 2;
+}
+
+message BaristaOrderInput {
+  repeated OrderLineItem items = 1;
+}
+
+message BaristaOrderItemStatusUpdate {
+  uint32 line = 1;
+  BaristaOrderItemStatus status = 2;
+}
+
+message BaristaOrderStatus {
+  bool open = 1;
+  repeated BaristaOrderLineItem items = 2;
+}
+
+message BaristaOrderResult {}
+
+message CustomerLoyaltyPointsBalance {
+  uint32 points = 1;
+}
+
+message CustomerLoyaltyPointsEarned {
+  uint32 points = 1;
+}
+
+message CustomerInput {
+  string email = 1;
+}
+
+message Payment {
+  string authcode = 1;
+}
+
+message ProcessPaymentInput {
+  string token = 1;
+}
+
+message ProcessPaymentResult {
+  Payment payment = 1;
+}
+
+message ProcessPaymentRefundInput {
+  Payment payment = 1;
+}
+
+message ProcessPaymentRefundResult { }
+
+message AddLoyaltyPointsInput {
+  string email = 1;
+  uint32 points = 2;
+}
+
+message AddLoyaltyPointsResult { }
+

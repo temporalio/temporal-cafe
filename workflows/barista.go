@@ -4,158 +4,114 @@ import (
 	"fmt"
 
 	"github.com/temporalio/temporal-cafe/api"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
-const BaristaOrderStatusQueryName = "getStatus"
-
-const BaristaOrderItemStartedSignalName = "barista-item-started"
-const BaristaOrderItemCompletedSignalName = "barista-item-completed"
-const BaristaOrderItemFailedSignalName = "barista-item-failed"
-
-const BaristaOrderItemStatusPending = "pending"
-const BaristaOrderItemStatusStarted = "started"
-const BaristaOrderItemStatusCompleted = "completed"
-const BaristaOrderItemStatusFailed = "failed"
-
-type BaristaOrderLineItem struct {
-	Name   string
-	Status string
+type BaristaOrderWorfklow struct {
+	Status *api.BaristaOrderStatus
 }
 
-type BaristaOrderWorkflowInput struct {
-	Items []api.OrderLineItem
-}
-
-type BaristaOrderItemStartedSignal struct {
-	Line int
-}
-
-type BaristaOrderItemCompletedSignal struct {
-	Line int
-}
-
-type BaristaOrderItemFailedSignal struct {
-	Line int
-}
-
-type BaristaOrderWorfklowStatus struct {
-	Open          bool
-	Items         []BaristaOrderLineItem
-	startNotified bool
-}
-
-type BaristaOrderWorfklowResult struct {
-}
-
-func (s *BaristaOrderWorfklowStatus) signalOrderStarted(ctx workflow.Context) {
-	if s.startNotified {
-		return
-	}
-
+func (s *BaristaOrderWorfklow) signalFulfilmentStarted(ctx workflow.Context) error {
 	we := workflow.GetInfo(ctx).ParentWorkflowExecution
-	workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, api.OrderStartedSignalName, nil)
-
-	s.startNotified = true
+	signal := workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, api.OrderFulfilmentStartedSignal, nil)
+	return signal.Get(ctx, nil)
 }
 
-func NewBaristaOrderWorkflowStatus(items []api.OrderLineItem) *BaristaOrderWorfklowStatus {
-	var baristaItems []BaristaOrderLineItem
+func NewBaristaOrderWorkflow(items []*api.OrderLineItem) *BaristaOrderWorfklow {
+	var baristaItems []*api.BaristaOrderLineItem
 	for _, li := range items {
-		for i := 0; i < li.Count; i++ {
-			baristaItems = append(baristaItems, BaristaOrderLineItem{Name: li.Name, Status: BaristaOrderItemStatusPending})
+		for i := uint32(0); i < li.Count; i++ {
+			baristaItems = append(baristaItems, &api.BaristaOrderLineItem{Name: li.Name})
 		}
 	}
 
-	return &BaristaOrderWorfklowStatus{Open: true, Items: baristaItems}
+	return &BaristaOrderWorfklow{Status: &api.BaristaOrderStatus{Open: true, Items: baristaItems}}
 }
 
-func (s *BaristaOrderWorfklowStatus) updateItem(ctx workflow.Context, line int, status string) {
-	if line < 1 || line > len(s.Items) {
-		return
-	}
-
-	switch status {
-	case BaristaOrderItemStatusPending:
-	case BaristaOrderItemStatusStarted:
-	case BaristaOrderItemStatusFailed:
-	case BaristaOrderItemStatusCompleted:
-	default:
-		return
+func (s *BaristaOrderWorfklow) updateItem(ctx workflow.Context, line uint32, status api.BaristaOrderItemStatus) error {
+	if line < 1 || line > uint32(len(s.Status.Items)) {
+		return fmt.Errorf("invalid line item: %d", line)
 	}
 
 	// Adjust item number because array is 0-indexed.
-	s.Items[line-1].Status = status
+	s.Status.Items[line-1].Status = status
+
+	return nil
 }
 
-func (s *BaristaOrderWorfklowStatus) checkForOrderCompleted() {
-	for _, v := range s.Items {
-		if v.Status != BaristaOrderItemStatusCompleted {
+func (s *BaristaOrderWorfklow) checkForOrderCompleted() {
+	for _, v := range s.Status.Items {
+		if v.Status != api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED {
 			return
 		}
 	}
-	s.Open = false
+	s.Status.Open = false
 }
 
-func (s *BaristaOrderWorfklowStatus) waitForItems(ctx workflow.Context) error {
+func (s *BaristaOrderWorfklow) waitForItems(ctx workflow.Context) error {
 	sel := workflow.NewSelector(ctx)
 
 	var err error
+	var fulfilmentStarted = false
+	var fulfilmentSignalled = false
 
 	// Listen for signals from Barista staff
-	ch := workflow.GetSignalChannel(ctx, BaristaOrderItemStartedSignalName)
+	ch := workflow.GetSignalChannel(ctx, api.BaristaOrderItemStatusSignal)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var startedSignal BaristaOrderItemStartedSignal
-		c.Receive(ctx, &startedSignal)
+		var signal api.BaristaOrderItemStatusUpdate
+		c.Receive(ctx, &signal)
 
-		s.updateItem(ctx, startedSignal.Line, BaristaOrderItemStatusStarted)
-		s.signalOrderStarted(ctx)
-	})
-	ch = workflow.GetSignalChannel(ctx, BaristaOrderItemCompletedSignalName)
-	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var completedSignal BaristaOrderItemCompletedSignal
-		c.Receive(ctx, &completedSignal)
+		err = s.updateItem(ctx, signal.Line, signal.Status)
+		if err != nil {
+			return
+		}
 
-		s.updateItem(ctx, completedSignal.Line, BaristaOrderItemStatusCompleted)
-		s.checkForOrderCompleted()
-	})
-	ch = workflow.GetSignalChannel(ctx, BaristaOrderItemFailedSignalName)
-	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var failedSignal BaristaOrderItemFailedSignal
-		c.Receive(ctx, &failedSignal)
-
-		s.updateItem(ctx, failedSignal.Line, BaristaOrderItemStatusFailed)
-		err = fmt.Errorf("item %s failed", s.Items[failedSignal.Line].Name)
-
-		s.Open = false
+		switch signal.Status {
+		case api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_STARTED:
+			fulfilmentStarted = true
+		case api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED:
+			fulfilmentStarted = true
+			s.checkForOrderCompleted()
+		case api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_FAILED:
+			err = fmt.Errorf("item %d failed", signal.Line)
+		}
 	})
 
 	// Listen for Workflow cancellation
-	sel.AddReceive(ctx.Done(), func(c workflow.ReceiveChannel, _ bool) {
-		s.Open = false
+	sel.AddReceive(ctx.Done(), func(workflow.ReceiveChannel, bool) {
+		err = temporal.NewCanceledError()
 	})
 
-	for s.Open {
+	for s.Status.Open {
 		sel.Select(ctx)
 		if err != nil {
+			s.Status.Open = false
 			return err
+		}
+		if fulfilmentStarted && !fulfilmentSignalled {
+			err = s.signalFulfilmentStarted(ctx)
+			if err != nil {
+				return err
+			}
+			fulfilmentSignalled = true
 		}
 	}
 
 	return nil
 }
 
-func BaristaOrder(ctx workflow.Context, input *BaristaOrderWorkflowInput) (*BaristaOrderWorfklowResult, error) {
-	status := NewBaristaOrderWorkflowStatus(input.Items)
+func BaristaOrder(ctx workflow.Context, input *api.BaristaOrderInput) (*api.BaristaOrderResult, error) {
+	wf := NewBaristaOrderWorkflow(input.Items)
 
-	err := workflow.SetQueryHandler(ctx, BaristaOrderStatusQueryName, func() (*BaristaOrderWorfklowStatus, error) {
-		return status, nil
+	err := workflow.SetQueryHandler(ctx, api.BaristaOrderStatusQuery, func() (*api.BaristaOrderStatus, error) {
+		return wf.Status, nil
 	})
 	if err != nil {
-		return &BaristaOrderWorfklowResult{}, err
+		return &api.BaristaOrderResult{}, err
 	}
 
-	err = status.waitForItems(ctx)
+	err = wf.waitForItems(ctx)
 
-	return &BaristaOrderWorfklowResult{}, err
+	return &api.BaristaOrderResult{}, err
 }

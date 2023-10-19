@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/workflows"
+	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/client"
 )
 
@@ -35,12 +36,12 @@ var kitchenStatusCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		v, err := c.QueryWorkflow(ctx, kitchenOrderID, "", workflows.KitchenOrderStatusQueryName)
+		v, err := c.QueryWorkflow(ctx, kitchenOrderID, "", api.KitchenOrderStatusQuery)
 		if err != nil {
 			return err
 		}
 
-		var status workflows.KitchenOrderWorfklowStatus
+		var status api.KitchenOrderStatus
 		err = v.Get(&status)
 		if err != nil {
 			return err
@@ -69,24 +70,22 @@ var kitchenUpdateCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		var s string
-		var si interface{}
-
-		switch args[0] {
-		case workflows.KitchenOrderItemStatusStarted:
-			s = workflows.KitchenOrderItemStartedSignalName
-			si = workflows.KitchenOrderItemStartedSignal{Line: kitchenOrderItemNumber}
-		case workflows.KitchenOrderItemStatusCompleted:
-			s = workflows.KitchenOrderItemCompletedSignalName
-			si = workflows.KitchenOrderItemCompletedSignal{Line: kitchenOrderItemNumber}
-		case workflows.KitchenOrderItemStatusFailed:
-			s = workflows.KitchenOrderItemFailedSignalName
-			si = workflows.KitchenOrderItemFailedSignal{Line: kitchenOrderItemNumber}
-		default:
+		statusName := fmt.Sprintf("KITCHEN_ORDER_ITEM_STATUS_%s", strings.ToUpper(args[0]))
+		status, ok := api.KitchenOrderItemStatus_value[statusName]
+		if !ok {
 			return fmt.Errorf("unknown status: %s", args[0])
 		}
 
-		err = c.SignalWorkflow(ctx, kitchenOrderID, "", s, si)
+		err = c.SignalWorkflow(
+			ctx,
+			kitchenOrderID,
+			"",
+			api.KitchenOrderItemStatusSignal,
+			api.KitchenOrderItemStatusUpdate{
+				Line:   uint32(kitchenOrderItemNumber),
+				Status: api.KitchenOrderItemStatus(status),
+			},
+		)
 		if err != nil {
 			return err
 		}

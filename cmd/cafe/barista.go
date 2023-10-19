@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/workflows"
+	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/client"
 )
 
@@ -35,12 +36,12 @@ var baristaStatusCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		v, err := c.QueryWorkflow(ctx, baristaOrderID, "", workflows.BaristaOrderStatusQueryName)
+		v, err := c.QueryWorkflow(ctx, baristaOrderID, "", api.BaristaOrderStatusQuery)
 		if err != nil {
 			return err
 		}
 
-		var status workflows.BaristaOrderWorfklowStatus
+		var status api.BaristaOrderStatus
 		err = v.Get(&status)
 		if err != nil {
 			return err
@@ -69,24 +70,22 @@ var baristaUpdateCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		var s string
-		var si interface{}
-
-		switch args[0] {
-		case workflows.BaristaOrderItemStatusStarted:
-			s = workflows.BaristaOrderItemStartedSignalName
-			si = workflows.BaristaOrderItemStartedSignal{Line: baristaOrderItemNumber}
-		case workflows.BaristaOrderItemStatusCompleted:
-			s = workflows.BaristaOrderItemCompletedSignalName
-			si = workflows.BaristaOrderItemCompletedSignal{Line: baristaOrderItemNumber}
-		case workflows.BaristaOrderItemStatusFailed:
-			s = workflows.BaristaOrderItemFailedSignalName
-			si = workflows.BaristaOrderItemFailedSignal{Line: baristaOrderItemNumber}
-		default:
+		statusName := fmt.Sprintf("BARISTA_ORDER_ITEM_STATUS_%s", strings.ToUpper(args[0]))
+		status, ok := api.BaristaOrderItemStatus_value[statusName]
+		if !ok {
 			return fmt.Errorf("unknown status: %s", args[0])
 		}
 
-		err = c.SignalWorkflow(ctx, baristaOrderID, "", s, si)
+		err = c.SignalWorkflow(
+			ctx,
+			baristaOrderID,
+			"",
+			api.BaristaOrderItemStatusSignal,
+			api.BaristaOrderItemStatusUpdate{
+				Line:   uint32(baristaOrderItemNumber),
+				Status: api.BaristaOrderItemStatus(status),
+			},
+		)
 		if err != nil {
 			return err
 		}

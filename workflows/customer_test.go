@@ -16,7 +16,7 @@ func TestCustomerWorkflow(t *testing.T) {
 
 	env.RegisterWorkflow(workflows.Customer)
 
-	input := &api.CustomerWorkflowInput{
+	input := &api.CustomerInput{
 		Email: "test@example.com",
 	}
 
@@ -24,18 +24,18 @@ func TestCustomerWorkflow(t *testing.T) {
 		env.SetContinueAsNewSuggested(true)
 
 		env.SignalWorkflow(
-			api.CustomerPointsAddSignalName,
-			api.CustomerPointsAddSignal{Points: 1},
+			api.CustomerLoyaltyPointsEarnedSignal,
+			api.CustomerLoyaltyPointsEarned{Points: 1},
 		)
 
 		env.SignalWorkflow(
-			api.CustomerPointsAddSignalName,
-			api.CustomerPointsAddSignal{Points: 3},
+			api.CustomerLoyaltyPointsEarnedSignal,
+			api.CustomerLoyaltyPointsEarned{Points: 3},
 		)
 
 		env.SignalWorkflow(
-			api.CustomerPointsAddSignalName,
-			api.CustomerPointsAddSignal{Points: 1},
+			api.CustomerLoyaltyPointsEarnedSignal,
+			api.CustomerLoyaltyPointsEarned{Points: 1},
 		)
 	}, 0)
 
@@ -43,13 +43,13 @@ func TestCustomerWorkflow(t *testing.T) {
 
 	assert.True(t, workflow.IsContinueAsNewError(env.GetWorkflowError()))
 
-	v, err := env.QueryWorkflow(api.CustomerPointsBalanceQueryName)
+	v, err := env.QueryWorkflow(api.CustomerLoyaltyPointsBalanceQuery)
 	assert.NoError(t, err)
-	var result api.CustomerPointsBalanceQuery
+	var result api.CustomerLoyaltyPointsBalance
 	err = v.Get(&result)
 	assert.NoError(t, err)
 
-	assert.Equal(t, uint(workflows.CustomerStartingBalance+5), result.Points)
+	assert.Equal(t, uint32(workflows.CustomerStartingBalance+5), result.Points)
 }
 
 func TestCustomerWorkflowContinue(t *testing.T) {
@@ -58,24 +58,24 @@ func TestCustomerWorkflowContinue(t *testing.T) {
 
 	env.RegisterWorkflow(workflows.Customer)
 
-	input := &api.CustomerWorkflowInput{
+	input := &api.CustomerInput{
 		Email: "test@example.com",
 	}
 
 	env.RegisterDelayedCallback(func() {
 		env.SignalWorkflow(
-			api.CustomerPointsAddSignalName,
-			api.CustomerPointsAddSignal{Points: 3},
+			api.CustomerLoyaltyPointsEarnedSignal,
+			api.CustomerLoyaltyPointsEarned{Points: 3},
 		)
 	}, 0)
 
-	env.ExecuteWorkflow(workflows.Customer, input, &api.CustomerWorkflowState{Points: 1})
+	env.ExecuteWorkflow(workflows.Customer, input, &workflows.CustomerWorkflowState{Points: 1})
 
-	v, err := env.QueryWorkflow(api.CustomerPointsBalanceQueryName)
+	v, err := env.QueryWorkflow(api.CustomerLoyaltyPointsBalanceQuery)
 	assert.NoError(t, err)
-	var result api.CustomerPointsBalanceQuery
+	var result api.CustomerLoyaltyPointsBalance
 	err = v.Get(&result)
 	assert.NoError(t, err)
 
-	assert.Equal(t, uint(4), result.Points)
+	assert.Equal(t, uint32(4), result.Points)
 }

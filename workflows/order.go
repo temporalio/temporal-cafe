@@ -4,164 +4,158 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/temporalio/temporal-cafe/activities"
 	"github.com/temporalio/temporal-cafe/api"
 	workflowEnums "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 )
 
-const OrderStartToCompleteDeadline = 15 * time.Minute
+const OrderFulfilmentWindow = 15 * time.Minute
 
-type OrderWorkflowStatus struct {
-	subOrders map[string]workflow.ChildWorkflowFuture
-}
-
-func NewOrderWorkflow() *OrderWorkflowStatus {
-	return &OrderWorkflowStatus{
-		subOrders: make(map[string]workflow.ChildWorkflowFuture),
-	}
-}
-
-func (s OrderWorkflowStatus) processPayment(ctx workflow.Context, token string) (activities.ProcessPaymentResult, error) {
+func processPayment(ctx workflow.Context, token string) (*api.ProcessPaymentResult, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 	})
 
-	var result activities.ProcessPaymentResult
-	err := workflow.ExecuteActivity(ctx, a.ProcessPayment, activities.ProcessPaymentInput{Token: token}).Get(ctx, &result)
+	var result api.ProcessPaymentResult
+	err := workflow.ExecuteActivity(ctx, a.ProcessPayment, &api.ProcessPaymentInput{Token: token}).Get(ctx, &result)
 
-	return result, err
+	return &result, err
 }
 
-func (s OrderWorkflowStatus) refundPayment(ctx workflow.Context, payment activities.Payment) error {
+func refundPayment(ctx workflow.Context, payment *api.Payment) error {
 	ctx, _ = workflow.NewDisconnectedContext(ctx)
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 	})
 
-	err := workflow.ExecuteActivity(ctx, a.ProcessPaymentRefund, activities.ProcessPaymentRefundInput{Payment: payment}).Get(ctx, nil)
+	err := workflow.ExecuteActivity(
+		ctx,
+		a.ProcessPaymentRefund,
+		api.ProcessPaymentRefundInput{Payment: payment},
+	).Get(ctx, nil)
 
 	return err
 }
 
-func (s OrderWorkflowStatus) sendSubOrders(ctx workflow.Context, items []api.OrderLineItem) workflow.CancelFunc {
-	itemsByType := make(map[string][]api.OrderLineItem)
+func fulfilOrder(ctx workflow.Context, items []*api.OrderLineItem) workflow.Future {
+	future, settable := workflow.NewFuture(ctx)
+	itemsByType := make(map[api.ProductType][]*api.OrderLineItem)
 
 	for _, v := range items {
 		itemsByType[v.Type] = append(itemsByType[v.Type], v)
 	}
 
 	childCtx, cancelChildren := workflow.WithCancel(ctx)
-
 	childCtx = workflow.WithChildOptions(childCtx, workflow.ChildWorkflowOptions{
 		ParentClosePolicy: workflowEnums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 	})
 
-	for t, items := range itemsByType {
-		var cw interface{}
-		var input interface{}
-		switch t {
-		case api.OrderLineItemTypeFood:
-			cw = KitchenOrder
-			input = KitchenOrderWorkflowInput{Items: items}
-		case api.OrderLineItemTypeBeverage:
-			cw = BaristaOrder
-			input = BaristaOrderWorkflowInput{Items: items}
-		}
-		s.subOrders[t] = workflow.ExecuteChildWorkflow(childCtx, cw, input)
-	}
+	workflow.Go(childCtx, func(gctx workflow.Context) {
+		var err error
 
-	return cancelChildren
-}
+		s := workflow.NewSelector(gctx)
 
-func (s OrderWorkflowStatus) waitForSubOrders(ctx workflow.Context) error {
-	var err error
-	var orderTimer workflow.Future
-
-	sel := workflow.NewSelector(ctx)
-
-	// Handle SubOrder completion. We only care if there was an error here,
-	// there is no meaningful result from SubOrders currently.
-	for t, v := range s.subOrders {
-		tt := t
-		sel.AddFuture(v, func(f workflow.Future) {
-			delete(s.subOrders, tt)
-			err = f.Get(ctx, nil)
-		})
-	}
-
-	// Set a timer once a SubOrder is started to ensure that everything is completed
-	// within a specific duration.
-	ch := workflow.GetSignalChannel(ctx, api.OrderStartedSignalName)
-	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		c.Receive(ctx, nil)
-
-		if orderTimer == nil {
-			orderTimer = workflow.NewTimer(ctx, OrderStartToCompleteDeadline)
-			sel.AddFuture(orderTimer, func(f workflow.Future) {
-				err = fmt.Errorf("order not completed within deadline: %s", OrderStartToCompleteDeadline)
+		for t, items := range itemsByType {
+			var cw interface{}
+			var input interface{}
+			switch t {
+			case api.ProductType_PRODUCT_TYPE_FOOD:
+				cw = KitchenOrder
+				input = api.KitchenOrderInput{Items: items}
+			case api.ProductType_PRODUCT_TYPE_BEVERAGE:
+				cw = BaristaOrder
+				input = api.BaristaOrderInput{Items: items}
+			}
+			s.AddFuture(workflow.ExecuteChildWorkflow(gctx, cw, input), func(f workflow.Future) {
+				err = f.Get(gctx, nil)
+				if err != nil {
+					cancelChildren()
+				}
 			})
 		}
-	})
 
-	// Workflow Cancelled
-	sel.AddReceive(ctx.Done(), func(c workflow.ReceiveChannel, _ bool) {
-		err = ctx.Err()
-	})
-
-	for len(s.subOrders) > 0 {
-		sel.Select(ctx)
-		if err != nil {
-			return err
+		for i := 0; i < len(itemsByType); i++ {
+			s.Select(gctx)
+			if err != nil {
+				break
+			}
 		}
-	}
 
-	return nil
+		settable.Set(nil, err)
+	})
+
+	return future
 }
 
-func (wf *OrderWorkflowStatus) itemCount(input *api.OrderWorkflowInput) uint {
-	i := 0
+func fulfilmentTimer(ctx workflow.Context) workflow.Future {
+	future, settable := workflow.NewFuture(ctx)
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch := workflow.GetSignalChannel(ctx, api.OrderFulfilmentStartedSignal)
+		ch.Receive(ctx, nil)
+		timer := workflow.NewTimer(ctx, OrderFulfilmentWindow)
+		timer.Get(ctx, nil)
+		settable.Set(nil, fmt.Errorf("order not fulfilled within window"))
+	})
+
+	return future
+}
+
+func calculateLoyaltyPoints(input *api.OrderInput) uint32 {
+	var i uint32 = 0
+
 	for _, item := range input.Items {
 		i += item.Count
 	}
 
-	return uint(i)
+	return i
 }
 
-func (wf *OrderWorkflowStatus) addLoyaltyPoints(ctx workflow.Context, input *api.OrderWorkflowInput) error {
+func addLoyaltyPoints(ctx workflow.Context, input *api.OrderInput) error {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 	})
 
-	items := wf.itemCount(input)
-	err := workflow.ExecuteActivity(ctx, a.AddLoyaltyPoints, activities.AddLoyaltyPointsInput{Email: input.Email, Points: items}).Get(ctx, nil)
+	points := calculateLoyaltyPoints(input)
+	err := workflow.ExecuteActivity(
+		ctx,
+		a.AddLoyaltyPoints,
+		api.AddLoyaltyPointsInput{Email: input.Email, Points: points},
+	).Get(ctx, nil)
 
 	return err
 }
 
-func Order(ctx workflow.Context, input *api.OrderWorkflowInput) (*api.OrderWorfklowResult, error) {
-	wf := NewOrderWorkflow()
-
-	p, err := wf.processPayment(ctx, input.PaymentToken)
+func Order(ctx workflow.Context, input *api.OrderInput) (*api.OrderResult, error) {
+	p, err := processPayment(ctx, input.PaymentToken)
 	if err != nil {
-		return &api.OrderWorfklowResult{}, err
+		return &api.OrderResult{}, err
 	}
 	defer func() {
 		if err != nil {
-			wf.refundPayment(ctx, p.Payment)
+			refundPayment(ctx, p.Payment)
 		}
 	}()
 
-	cancelSubOrders := wf.sendSubOrders(ctx, input.Items)
-	err = wf.waitForSubOrders(ctx)
+	order := fulfilOrder(ctx, input.Items)
+	timer := fulfilmentTimer(ctx)
+
+	s := workflow.NewSelector(ctx)
+	s.AddFuture(order, func(f workflow.Future) {
+		err = f.Get(ctx, nil)
+	})
+	s.AddFuture(timer, func(f workflow.Future) {
+		err = f.Get(ctx, nil)
+	})
+
+	s.Select(ctx)
 	if err != nil {
-		cancelSubOrders()
-		return &api.OrderWorfklowResult{}, err
+		return &api.OrderResult{}, err
 	}
 
 	if input.Email != "" {
-		_ = wf.addLoyaltyPoints(ctx, input)
+		_ = addLoyaltyPoints(ctx, input)
 	}
 
-	return &api.OrderWorfklowResult{}, nil
+	return &api.OrderResult{}, nil
 }

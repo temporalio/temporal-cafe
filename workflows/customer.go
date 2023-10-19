@@ -8,21 +8,25 @@ import (
 // CustomerStartingBalance is the number of points to credit a loyalty account on signup
 const CustomerStartingBalance = 100
 
+type CustomerWorkflowState struct {
+	Points uint32
+}
+
 // NewCustomerWorkflowState creates a workflow state
-func NewCustomerWorkflowState(state *api.CustomerWorkflowState) *api.CustomerWorkflowState {
+func NewCustomerWorkflowState(state *CustomerWorkflowState) *CustomerWorkflowState {
 	if state != nil {
 		return state
 	}
 
-	return &api.CustomerWorkflowState{Points: CustomerStartingBalance}
+	return &CustomerWorkflowState{Points: CustomerStartingBalance}
 }
 
-func handleEvents(ctx workflow.Context, state *api.CustomerWorkflowState) error {
-	ch := workflow.GetSignalChannel(ctx, api.CustomerPointsAddSignalName)
+func handleEvents(ctx workflow.Context, state *CustomerWorkflowState) error {
+	ch := workflow.GetSignalChannel(ctx, api.CustomerLoyaltyPointsEarnedSignal)
 	s := workflow.NewSelector(ctx)
 
 	s.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var signal api.CustomerPointsAddSignal
+		var signal api.CustomerLoyaltyPointsEarned
 		c.Receive(ctx, &signal)
 
 		state.Points += signal.Points
@@ -41,11 +45,11 @@ func handleEvents(ctx workflow.Context, state *api.CustomerWorkflowState) error 
 	return nil
 }
 
-func Customer(ctx workflow.Context, input *api.CustomerWorkflowInput, state *api.CustomerWorkflowState) error {
+func Customer(ctx workflow.Context, input *api.CustomerInput, state *CustomerWorkflowState) error {
 	wf := NewCustomerWorkflowState(state)
 
-	workflow.SetQueryHandler(ctx, api.CustomerPointsBalanceQueryName, func() (*api.CustomerPointsBalanceQuery, error) {
-		return &api.CustomerPointsBalanceQuery{Points: wf.Points}, nil
+	workflow.SetQueryHandler(ctx, api.CustomerLoyaltyPointsBalanceQuery, func() (*api.CustomerLoyaltyPointsBalance, error) {
+		return &api.CustomerLoyaltyPointsBalance{Points: wf.Points}, nil
 	})
 
 	handleEvents(ctx, wf)

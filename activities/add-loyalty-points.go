@@ -2,35 +2,28 @@ package activities
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/temporalio/temporal-cafe/api"
 	"go.temporal.io/sdk/client"
 )
 
-type AddLoyaltyPointsInput struct {
-	Email  string
-	Points uint
-}
-
-type AddLoyaltyPointsResult struct {
-}
-
-func (a *Activities) AddLoyaltyPoints(ctx context.Context, input *AddLoyaltyPointsInput) (*AddLoyaltyPointsResult, error) {
+func (a *Activities) AddLoyaltyPoints(ctx context.Context, input *api.AddLoyaltyPointsInput) (*api.AddLoyaltyPointsResult, error) {
 	_, err := a.Client.SignalWithStartWorkflow(
 		ctx,
-		api.CustomerWorkflowID(input.Email),
-		api.CustomerPointsAddSignalName,
-		api.CustomerPointsAddSignal{
+		fmt.Sprintf("customer:%s", input.Email),
+		api.CustomerLoyaltyPointsEarnedSignal,
+		api.CustomerLoyaltyPointsEarned{
 			Points: input.Points,
 		},
 		client.StartWorkflowOptions{
 			TaskQueue: "cafe",
 		},
 		"Customer",
-		api.CustomerWorkflowInput{
+		api.CustomerInput{
 			Email: input.Email,
 		},
 	)
 
-	return &AddLoyaltyPointsResult{}, err
+	return &api.AddLoyaltyPointsResult{}, err
 }

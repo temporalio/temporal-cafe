@@ -25,15 +25,15 @@ var orderCmd = &cobra.Command{
 		}
 		defer c.Close()
 
-		items := []api.OrderLineItem{}
+		items := []*api.OrderLineItem{}
 		for _, v := range foodItems {
-			items = append(items, api.OrderLineItem{Type: api.OrderLineItemTypeFood, Name: v, Count: 1})
+			items = append(items, &api.OrderLineItem{Type: api.ProductType_PRODUCT_TYPE_FOOD, Name: v, Count: 1})
 		}
 		for _, v := range beverageItems {
-			items = append(items, api.OrderLineItem{Type: api.OrderLineItemTypeBeverage, Name: v, Count: 1})
+			items = append(items, &api.OrderLineItem{Type: api.ProductType_PRODUCT_TYPE_BEVERAGE, Name: v, Count: 1})
 		}
 
-		order := api.OrderWorkflowInput{
+		order := api.OrderInput{
 			Email: email,
 			Items: items,
 		}
@@ -44,7 +44,7 @@ var orderCmd = &cobra.Command{
 				TaskQueue: "cafe",
 			},
 			"Order",
-			order,
+			&order,
 		)
 		if err != nil {
 			return err
