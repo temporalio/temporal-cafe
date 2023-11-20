@@ -1,65 +1,31 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
-
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/api"
-	"go.temporal.io/sdk/client"
+	"github.com/temporalio/temporal-cafe/cmd/cafe/ui"
 )
 
-var email string
-var foodItems []string
-var beverageItems []string
-
-// orderCmd represents the order command
 var orderCmd = &cobra.Command{
 	Use:   "order item ...",
 	Short: "Place an order",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := client.Dial(client.Options{})
-		if err != nil {
-			log.Fatalf("client error: %v", err)
-		}
-		defer c.Close()
+		b := ui.NewPOS()
 
-		items := []*api.OrderLineItem{}
-		for _, v := range foodItems {
-			items = append(items, &api.OrderLineItem{Type: api.ProductType_PRODUCT_TYPE_FOOD, Name: v, Count: 1})
-		}
-		for _, v := range beverageItems {
-			items = append(items, &api.OrderLineItem{Type: api.ProductType_PRODUCT_TYPE_BEVERAGE, Name: v, Count: 1})
-		}
-
-		order := api.OrderInput{
-			Email: email,
-			Items: items,
-		}
-
-		we, err := c.ExecuteWorkflow(
-			context.Background(),
-			client.StartWorkflowOptions{
-				TaskQueue: "cafe",
-			},
-			"Order",
-			&order,
-		)
+		f, err := tea.LogToFile("debug.log", "debug")
 		if err != nil {
 			return err
 		}
+		defer f.Close()
 
-		fmt.Printf("Order %s created.\n", we.GetID())
+		p := tea.NewProgram(b, tea.WithAltScreen(), tea.WithMouseCellMotion())
+		_, err = p.Run()
 
-		return nil
+		return err
 	},
 }
 
 func init() {
-	orderCmd.Flags().StringVarP(&email, "email", "e", "", "Email")
-	orderCmd.Flags().StringArrayVarP(&foodItems, "food", "f", []string{}, "Food")
-	orderCmd.Flags().StringArrayVarP(&beverageItems, "beverage", "b", []string{}, "Beverage")
-
 	rootCmd.AddCommand(orderCmd)
 }

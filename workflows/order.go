@@ -4,25 +4,25 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/proto"
 	workflowEnums "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/workflow"
 )
 
 const OrderFulfilmentWindow = 15 * time.Minute
 
-func processPayment(ctx workflow.Context, token string) (*api.ProcessPaymentResult, error) {
+func processPayment(ctx workflow.Context, token string) (*proto.ProcessPaymentResult, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 	})
 
-	var result api.ProcessPaymentResult
-	err := workflow.ExecuteActivity(ctx, a.ProcessPayment, &api.ProcessPaymentInput{Token: token}).Get(ctx, &result)
+	var result proto.ProcessPaymentResult
+	err := workflow.ExecuteActivity(ctx, a.ProcessPayment, &proto.ProcessPaymentInput{Token: token}).Get(ctx, &result)
 
 	return &result, err
 }
 
-func refundPayment(ctx workflow.Context, payment *api.Payment) error {
+func refundPayment(ctx workflow.Context, payment *proto.Payment) error {
 	ctx, _ = workflow.NewDisconnectedContext(ctx)
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
@@ -31,15 +31,15 @@ func refundPayment(ctx workflow.Context, payment *api.Payment) error {
 	err := workflow.ExecuteActivity(
 		ctx,
 		a.ProcessPaymentRefund,
-		api.ProcessPaymentRefundInput{Payment: payment},
+		proto.ProcessPaymentRefundInput{Payment: payment},
 	).Get(ctx, nil)
 
 	return err
 }
 
-func fulfilOrder(ctx workflow.Context, items []*api.OrderLineItem) workflow.Future {
+func fulfilOrder(ctx workflow.Context, name string, items []*proto.OrderLineItem) workflow.Future {
 	future, settable := workflow.NewFuture(ctx)
-	itemsByType := make(map[api.ProductType][]*api.OrderLineItem)
+	itemsByType := make(map[proto.ProductType][]*proto.OrderLineItem)
 
 	for _, v := range items {
 		itemsByType[v.Type] = append(itemsByType[v.Type], v)
@@ -59,12 +59,12 @@ func fulfilOrder(ctx workflow.Context, items []*api.OrderLineItem) workflow.Futu
 			var cw interface{}
 			var input interface{}
 			switch t {
-			case api.ProductType_PRODUCT_TYPE_FOOD:
+			case proto.ProductType_PRODUCT_TYPE_FOOD:
 				cw = KitchenOrder
-				input = api.KitchenOrderInput{Items: items}
-			case api.ProductType_PRODUCT_TYPE_BEVERAGE:
+				input = proto.KitchenOrderInput{Name: name, Items: items}
+			case proto.ProductType_PRODUCT_TYPE_BEVERAGE:
 				cw = BaristaOrder
-				input = api.BaristaOrderInput{Items: items}
+				input = proto.BaristaOrderInput{Name: name, Items: items}
 			}
 			s.AddFuture(workflow.ExecuteChildWorkflow(gctx, cw, input), func(f workflow.Future) {
 				err = f.Get(gctx, nil)
@@ -91,7 +91,7 @@ func fulfilmentTimer(ctx workflow.Context) workflow.Future {
 	future, settable := workflow.NewFuture(ctx)
 
 	workflow.Go(ctx, func(ctx workflow.Context) {
-		ch := workflow.GetSignalChannel(ctx, api.OrderFulfilmentStartedSignal)
+		ch := workflow.GetSignalChannel(ctx, proto.OrderFulfilmentStartedSignal)
 		ch.Receive(ctx, nil)
 		timer := workflow.NewTimer(ctx, OrderFulfilmentWindow)
 		timer.Get(ctx, nil)
@@ -101,7 +101,7 @@ func fulfilmentTimer(ctx workflow.Context) workflow.Future {
 	return future
 }
 
-func calculateLoyaltyPoints(input *api.OrderInput) uint32 {
+func calculateLoyaltyPoints(input *proto.OrderInput) uint32 {
 	var i uint32 = 0
 
 	for _, item := range input.Items {
@@ -111,7 +111,7 @@ func calculateLoyaltyPoints(input *api.OrderInput) uint32 {
 	return i
 }
 
-func addLoyaltyPoints(ctx workflow.Context, input *api.OrderInput) error {
+func addLoyaltyPoints(ctx workflow.Context, input *proto.OrderInput) error {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 	})
@@ -120,16 +120,16 @@ func addLoyaltyPoints(ctx workflow.Context, input *api.OrderInput) error {
 	err := workflow.ExecuteActivity(
 		ctx,
 		a.AddLoyaltyPoints,
-		api.AddLoyaltyPointsInput{Email: input.Email, Points: points},
+		proto.AddLoyaltyPointsInput{Email: input.Email, Points: points},
 	).Get(ctx, nil)
 
 	return err
 }
 
-func Order(ctx workflow.Context, input *api.OrderInput) (*api.OrderResult, error) {
+func Order(ctx workflow.Context, input *proto.OrderInput) (*proto.OrderResult, error) {
 	p, err := processPayment(ctx, input.PaymentToken)
 	if err != nil {
-		return &api.OrderResult{}, err
+		return &proto.OrderResult{}, err
 	}
 	defer func() {
 		if err != nil {
@@ -137,7 +137,7 @@ func Order(ctx workflow.Context, input *api.OrderInput) (*api.OrderResult, error
 		}
 	}()
 
-	order := fulfilOrder(ctx, input.Items)
+	order := fulfilOrder(ctx, input.Name, input.Items)
 	timer := fulfilmentTimer(ctx)
 
 	s := workflow.NewSelector(ctx)
@@ -150,12 +150,12 @@ func Order(ctx workflow.Context, input *api.OrderInput) (*api.OrderResult, error
 
 	s.Select(ctx)
 	if err != nil {
-		return &api.OrderResult{}, err
+		return &proto.OrderResult{}, err
 	}
 
 	if input.Email != "" {
 		_ = addLoyaltyPoints(ctx, input)
 	}
 
-	return &api.OrderResult{}, nil
+	return &proto.OrderResult{}, nil
 }

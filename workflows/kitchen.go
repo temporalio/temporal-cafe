@@ -3,33 +3,33 @@ package workflows
 import (
 	"fmt"
 
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/proto"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
 type KitchenOrderWorfklow struct {
-	Status *api.KitchenOrderStatus
+	Status *proto.KitchenOrderStatus
 }
 
 func (s *KitchenOrderWorfklow) signalFulfilmentStarted(ctx workflow.Context) error {
 	we := workflow.GetInfo(ctx).ParentWorkflowExecution
-	signal := workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, api.OrderFulfilmentStartedSignal, nil)
+	signal := workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, proto.OrderFulfilmentStartedSignal, nil)
 	return signal.Get(ctx, nil)
 }
 
-func NewKitchenOrderWorkflow(items []*api.OrderLineItem) *KitchenOrderWorfklow {
-	var kitchenItems []*api.KitchenOrderLineItem
+func NewKitchenOrderWorkflow(name string, items []*proto.OrderLineItem) *KitchenOrderWorfklow {
+	var kitchenItems []*proto.KitchenOrderLineItem
 	for _, li := range items {
 		for i := uint32(0); i < li.Count; i++ {
-			kitchenItems = append(kitchenItems, &api.KitchenOrderLineItem{Name: li.Name})
+			kitchenItems = append(kitchenItems, &proto.KitchenOrderLineItem{Name: li.Name})
 		}
 	}
 
-	return &KitchenOrderWorfklow{Status: &api.KitchenOrderStatus{Open: true, Items: kitchenItems}}
+	return &KitchenOrderWorfklow{Status: &proto.KitchenOrderStatus{Name: name, Open: true, Items: kitchenItems}}
 }
 
-func (s *KitchenOrderWorfklow) updateItem(ctx workflow.Context, line uint32, status api.KitchenOrderItemStatus) error {
+func (s *KitchenOrderWorfklow) updateItem(ctx workflow.Context, line uint32, status proto.KitchenOrderItemStatus) error {
 	if line < 1 || line > uint32(len(s.Status.Items)) {
 		return fmt.Errorf("invalid line item: %d", line)
 	}
@@ -42,7 +42,7 @@ func (s *KitchenOrderWorfklow) updateItem(ctx workflow.Context, line uint32, sta
 
 func (s *KitchenOrderWorfklow) checkForOrderCompleted() {
 	for _, v := range s.Status.Items {
-		if v.Status != api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED {
+		if v.Status != proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED {
 			return
 		}
 	}
@@ -57,9 +57,9 @@ func (s *KitchenOrderWorfklow) waitForItems(ctx workflow.Context) error {
 	var fulfilmentSignalled = false
 
 	// Listen for signals from Kitchen staff
-	ch := workflow.GetSignalChannel(ctx, api.KitchenOrderItemStatusSignal)
+	ch := workflow.GetSignalChannel(ctx, proto.KitchenOrderItemStatusSignal)
 	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var signal api.KitchenOrderItemStatusUpdate
+		var signal proto.KitchenOrderItemStatusUpdate
 		c.Receive(ctx, &signal)
 
 		err = s.updateItem(ctx, signal.Line, signal.Status)
@@ -68,12 +68,12 @@ func (s *KitchenOrderWorfklow) waitForItems(ctx workflow.Context) error {
 		}
 
 		switch signal.Status {
-		case api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_STARTED:
+		case proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_STARTED:
 			fulfilmentStarted = true
-		case api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED:
+		case proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED:
 			fulfilmentStarted = true
 			s.checkForOrderCompleted()
-		case api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_FAILED:
+		case proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_FAILED:
 			err = fmt.Errorf("item %d failed", signal.Line)
 		}
 	})
@@ -101,17 +101,17 @@ func (s *KitchenOrderWorfklow) waitForItems(ctx workflow.Context) error {
 	return nil
 }
 
-func KitchenOrder(ctx workflow.Context, input *api.KitchenOrderInput) (*api.KitchenOrderResult, error) {
-	wf := NewKitchenOrderWorkflow(input.Items)
+func KitchenOrder(ctx workflow.Context, input *proto.KitchenOrderInput) (*proto.KitchenOrderResult, error) {
+	wf := NewKitchenOrderWorkflow(input.Name, input.Items)
 
-	err := workflow.SetQueryHandler(ctx, api.KitchenOrderStatusQuery, func() (*api.KitchenOrderStatus, error) {
+	err := workflow.SetQueryHandler(ctx, proto.KitchenOrderStatusQuery, func() (*proto.KitchenOrderStatus, error) {
 		return wf.Status, nil
 	})
 	if err != nil {
-		return &api.KitchenOrderResult{}, err
+		return &proto.KitchenOrderResult{}, err
 	}
 
 	err = wf.waitForItems(ctx)
 
-	return &api.KitchenOrderResult{}, err
+	return &proto.KitchenOrderResult{}, err
 }

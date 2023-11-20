@@ -1,7 +1,7 @@
 package workflows
 
 import (
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/proto"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -22,11 +22,11 @@ func NewCustomerWorkflowState(state *CustomerWorkflowState) *CustomerWorkflowSta
 }
 
 func handleEvents(ctx workflow.Context, state *CustomerWorkflowState) error {
-	ch := workflow.GetSignalChannel(ctx, api.CustomerLoyaltyPointsEarnedSignal)
+	ch := workflow.GetSignalChannel(ctx, proto.CustomerLoyaltyPointsEarnedSignal)
 	s := workflow.NewSelector(ctx)
 
 	s.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var signal api.CustomerLoyaltyPointsEarned
+		var signal proto.CustomerLoyaltyPointsEarned
 		c.Receive(ctx, &signal)
 
 		state.Points += signal.Points
@@ -45,11 +45,11 @@ func handleEvents(ctx workflow.Context, state *CustomerWorkflowState) error {
 	return nil
 }
 
-func Customer(ctx workflow.Context, input *api.CustomerInput, state *CustomerWorkflowState) error {
+func Customer(ctx workflow.Context, input *proto.CustomerInput, state *CustomerWorkflowState) error {
 	wf := NewCustomerWorkflowState(state)
 
-	workflow.SetQueryHandler(ctx, api.CustomerLoyaltyPointsBalanceQuery, func() (*api.CustomerLoyaltyPointsBalance, error) {
-		return &api.CustomerLoyaltyPointsBalance{Points: wf.Points}, nil
+	workflow.SetQueryHandler(ctx, proto.CustomerLoyaltyPointsBalanceQuery, func() (*proto.CustomerLoyaltyPointsBalance, error) {
+		return &proto.CustomerLoyaltyPointsBalance{Points: wf.Points}, nil
 	})
 
 	handleEvents(ctx, wf)

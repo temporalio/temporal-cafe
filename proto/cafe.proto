@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package temporalio.cafe;
 
-option go_package = "github.com/temporalio/temporal-cafe/api";
+option go_package = "github.com/temporalio/temporal-cafe/proto";
 import "google/protobuf/empty.proto";
 
 service Cafe {
@@ -27,6 +27,16 @@ enum ProductType {
   PRODUCT_TYPE_BEVERAGE = 2;
 }
 
+message Menu {
+  repeated MenuItem items = 1;
+}
+
+message MenuItem {
+  ProductType type = 1;
+  string name = 2;
+  uint32 price = 3;
+}
+
 message OrderLineItem {
   ProductType type = 1;
   string name = 2;
@@ -36,8 +46,9 @@ message OrderLineItem {
 
 message OrderInput {
   string email = 1;
-  string payment_token = 2;
-  repeated OrderLineItem items = 3;
+  string name = 2;
+  string payment_token = 3;
+  repeated OrderLineItem items = 4;
 }
 
 message OrderResult {}
@@ -55,7 +66,8 @@ message KitchenOrderLineItem {
 }
 
 message KitchenOrderInput {
-  repeated OrderLineItem items = 1;
+  string name = 1;
+  repeated OrderLineItem items = 2;
 }
 
 message KitchenOrderItemStatusUpdate {
@@ -64,8 +76,9 @@ message KitchenOrderItemStatusUpdate {
 }
 
 message KitchenOrderStatus {
-  bool open = 1;
-  repeated KitchenOrderLineItem items = 2;
+  string name = 1;
+  bool open = 2;
+  repeated KitchenOrderLineItem items = 3;
 }
 
 message KitchenOrderResult {}
@@ -83,7 +96,8 @@ message BaristaOrderLineItem {
 }
 
 message BaristaOrderInput {
-  repeated OrderLineItem items = 1;
+  string name = 1;
+  repeated OrderLineItem items = 2;
 }
 
 message BaristaOrderItemStatusUpdate {
@@ -92,8 +106,9 @@ message BaristaOrderItemStatusUpdate {
 }
 
 message BaristaOrderStatus {
-  bool open = 1;
-  repeated BaristaOrderLineItem items = 2;
+  string name = 1;
+  bool open = 2;
+  repeated BaristaOrderLineItem items = 3;
 }
 
 message BaristaOrderResult {}

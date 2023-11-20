@@ -6,8 +6,10 @@ import (
 	"log"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/cmd/cafe/ui"
+	"github.com/temporalio/temporal-cafe/proto"
 	"go.temporal.io/sdk/client"
 )
 
@@ -36,12 +38,12 @@ var kitchenStatusCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		v, err := c.QueryWorkflow(ctx, kitchenOrderID, "", api.KitchenOrderStatusQuery)
+		v, err := c.QueryWorkflow(ctx, kitchenOrderID, "", proto.KitchenOrderStatusQuery)
 		if err != nil {
 			return err
 		}
 
-		var status api.KitchenOrderStatus
+		var status proto.KitchenOrderStatus
 		err = v.Get(&status)
 		if err != nil {
 			return err
@@ -71,7 +73,7 @@ var kitchenUpdateCmd = &cobra.Command{
 		ctx := context.Background()
 
 		statusName := fmt.Sprintf("KITCHEN_ORDER_ITEM_STATUS_%s", strings.ToUpper(args[0]))
-		status, ok := api.KitchenOrderItemStatus_value[statusName]
+		status, ok := proto.KitchenOrderItemStatus_value[statusName]
 		if !ok {
 			return fmt.Errorf("unknown status: %s", args[0])
 		}
@@ -80,10 +82,10 @@ var kitchenUpdateCmd = &cobra.Command{
 			ctx,
 			kitchenOrderID,
 			"",
-			api.KitchenOrderItemStatusSignal,
-			api.KitchenOrderItemStatusUpdate{
+			proto.KitchenOrderItemStatusSignal,
+			proto.KitchenOrderItemStatusUpdate{
 				Line:   uint32(kitchenOrderItemNumber),
-				Status: api.KitchenOrderItemStatus(status),
+				Status: proto.KitchenOrderItemStatus(status),
 			},
 		)
 		if err != nil {
@@ -94,6 +96,26 @@ var kitchenUpdateCmd = &cobra.Command{
 		fmt.Printf("Sent update: %d:\t[%s]\n", kitchenOrderItemNumber, args[0])
 
 		return nil
+	},
+}
+
+var kitchenBoardCmd = &cobra.Command{
+	Use:   "board",
+	Short: "Show kitchen order board",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		b := ui.KitchenBoard{}
+
+		f, err := tea.LogToFile("debug.log", "debug")
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		p := tea.NewProgram(b, tea.WithAltScreen())
+		_, err = p.Run()
+
+		return err
 	},
 }
 
@@ -108,5 +130,6 @@ func init() {
 
 	kitchenCmd.AddCommand(kitchenStatusCmd)
 	kitchenCmd.AddCommand(kitchenUpdateCmd)
+	kitchenCmd.AddCommand(kitchenBoardCmd)
 	rootCmd.AddCommand(kitchenCmd)
 }

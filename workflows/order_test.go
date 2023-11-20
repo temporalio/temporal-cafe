@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/temporalio/temporal-cafe/activities"
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/proto"
 	"github.com/temporalio/temporal-cafe/workflows"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
@@ -29,13 +29,13 @@ func TestOrderWorkflow(t *testing.T) {
 	env.RegisterWorkflow(workflows.BaristaOrder)
 	env.RegisterActivity(a.AddLoyaltyPoints)
 
-	input := &api.OrderInput{
+	input := &proto.OrderInput{
 		Email:        "test@example.com",
 		PaymentToken: "x",
-		Items: []*api.OrderLineItem{
-			{Type: api.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "coffee", Count: 1},
-			{Type: api.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "latte", Count: 2},
-			{Type: api.ProductType_PRODUCT_TYPE_FOOD, Name: "bagel", Count: 2},
+		Items: []*proto.OrderLineItem{
+			{Type: proto.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "coffee", Count: 1},
+			{Type: proto.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "latte", Count: 2},
+			{Type: proto.ProductType_PRODUCT_TYPE_FOOD, Name: "bagel", Count: 2},
 		},
 	}
 
@@ -45,26 +45,26 @@ func TestOrderWorkflow(t *testing.T) {
 		if workflowInfo.WorkflowType.Name == "BaristaOrder" {
 			env.SignalWorkflowByID(
 				wid,
-				api.BaristaOrderItemStatusSignal,
-				api.BaristaOrderItemStatusUpdate{
+				proto.BaristaOrderItemStatusSignal,
+				proto.BaristaOrderItemStatusUpdate{
 					Line:   1,
-					Status: api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 			env.SignalWorkflowByID(
 				wid,
-				api.BaristaOrderItemStatusSignal,
-				api.BaristaOrderItemStatusUpdate{
+				proto.BaristaOrderItemStatusSignal,
+				proto.BaristaOrderItemStatusUpdate{
 					Line:   2,
-					Status: api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 			env.SignalWorkflowByID(
 				wid,
-				api.BaristaOrderItemStatusSignal,
-				api.BaristaOrderItemStatusUpdate{
+				proto.BaristaOrderItemStatusSignal,
+				proto.BaristaOrderItemStatusUpdate{
 					Line:   3,
-					Status: api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 		}
@@ -72,33 +72,33 @@ func TestOrderWorkflow(t *testing.T) {
 		if workflowInfo.WorkflowType.Name == "KitchenOrder" {
 			env.SignalWorkflowByID(
 				wid,
-				api.KitchenOrderItemStatusSignal,
-				api.KitchenOrderItemStatusUpdate{
+				proto.KitchenOrderItemStatusSignal,
+				proto.KitchenOrderItemStatusUpdate{
 					Line:   1,
-					Status: api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 			env.SignalWorkflowByID(
 				wid,
-				api.KitchenOrderItemStatusSignal,
-				api.KitchenOrderItemStatusUpdate{
+				proto.KitchenOrderItemStatusSignal,
+				proto.KitchenOrderItemStatusUpdate{
 					Line:   2,
-					Status: api.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 		}
 	})
 
-	env.OnActivity(a.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *api.ProcessPaymentInput) (*api.ProcessPaymentResult, error) {
-		return &api.ProcessPaymentResult{}, nil
+	env.OnActivity(a.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentInput) (*proto.ProcessPaymentResult, error) {
+		return &proto.ProcessPaymentResult{}, nil
 	})
 
-	env.OnActivity(a.ProcessPaymentRefund, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *api.ProcessPaymentRefundInput) (*api.ProcessPaymentRefundResult, error) {
-		return &api.ProcessPaymentRefundResult{}, nil
+	env.OnActivity(a.ProcessPaymentRefund, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentRefundInput) (*proto.ProcessPaymentRefundResult, error) {
+		return &proto.ProcessPaymentRefundResult{}, nil
 	})
 
-	env.OnActivity(a.AddLoyaltyPoints, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *api.AddLoyaltyPointsInput) (*api.AddLoyaltyPointsResult, error) {
-		return &api.AddLoyaltyPointsResult{}, nil
+	env.OnActivity(a.AddLoyaltyPoints, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.AddLoyaltyPointsInput) (*proto.AddLoyaltyPointsResult, error) {
+		return &proto.AddLoyaltyPointsResult{}, nil
 	})
 
 	var activityCalls []string
@@ -114,7 +114,7 @@ func TestOrderWorkflow(t *testing.T) {
 	env.ExecuteWorkflow(workflows.Order, input)
 	assert.True(t, env.IsWorkflowCompleted())
 
-	var result api.OrderResult
+	var result proto.OrderResult
 
 	err := env.GetWorkflowResult(&result)
 	assert.NoError(t, err)
@@ -132,12 +132,12 @@ func TestOrderWorkflowFulfilmentDeadline(t *testing.T) {
 	env.RegisterWorkflow(workflows.KitchenOrder)
 	env.RegisterWorkflow(workflows.BaristaOrder)
 
-	input := &api.OrderInput{
+	input := &proto.OrderInput{
 		Email:        "test@example.com",
 		PaymentToken: "x",
-		Items: []*api.OrderLineItem{
-			{Type: api.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "coffee", Count: 1},
-			{Type: api.ProductType_PRODUCT_TYPE_FOOD, Name: "bagel", Count: 1},
+		Items: []*proto.OrderLineItem{
+			{Type: proto.ProductType_PRODUCT_TYPE_BEVERAGE, Name: "coffee", Count: 1},
+			{Type: proto.ProductType_PRODUCT_TYPE_FOOD, Name: "bagel", Count: 1},
 		},
 	}
 
@@ -147,21 +147,21 @@ func TestOrderWorkflowFulfilmentDeadline(t *testing.T) {
 		if workflowInfo.WorkflowType.Name == "BaristaOrder" {
 			env.SignalWorkflowByID(
 				wid,
-				api.BaristaOrderItemStatusSignal,
-				api.BaristaOrderItemStatusUpdate{
+				proto.BaristaOrderItemStatusSignal,
+				proto.BaristaOrderItemStatusUpdate{
 					Line:   1,
-					Status: api.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
 				},
 			)
 		}
 	})
 
-	env.OnActivity(a.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *api.ProcessPaymentInput) (*api.ProcessPaymentResult, error) {
-		return &api.ProcessPaymentResult{}, nil
+	env.OnActivity(a.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentInput) (*proto.ProcessPaymentResult, error) {
+		return &proto.ProcessPaymentResult{}, nil
 	})
 
-	env.OnActivity(a.ProcessPaymentRefund, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *api.ProcessPaymentRefundInput) (*api.ProcessPaymentRefundResult, error) {
-		return &api.ProcessPaymentRefundResult{}, nil
+	env.OnActivity(a.ProcessPaymentRefund, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentRefundInput) (*proto.ProcessPaymentRefundResult, error) {
+		return &proto.ProcessPaymentRefundResult{}, nil
 	})
 
 	var activityCalls []string
@@ -177,7 +177,7 @@ func TestOrderWorkflowFulfilmentDeadline(t *testing.T) {
 	env.ExecuteWorkflow(workflows.Order, input)
 	assert.True(t, env.IsWorkflowCompleted())
 
-	var result api.OrderResult
+	var result proto.OrderResult
 
 	err := env.GetWorkflowResult(&result)
 	assert.Error(t, fmt.Errorf("order not fulfilled within window"), err)

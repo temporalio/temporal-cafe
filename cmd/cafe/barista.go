@@ -6,8 +6,10 @@ import (
 	"log"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
-	"github.com/temporalio/temporal-cafe/api"
+	"github.com/temporalio/temporal-cafe/cmd/cafe/ui"
+	"github.com/temporalio/temporal-cafe/proto"
 	"go.temporal.io/sdk/client"
 )
 
@@ -36,12 +38,12 @@ var baristaStatusCmd = &cobra.Command{
 
 		ctx := context.Background()
 
-		v, err := c.QueryWorkflow(ctx, baristaOrderID, "", api.BaristaOrderStatusQuery)
+		v, err := c.QueryWorkflow(ctx, baristaOrderID, "", proto.BaristaOrderStatusQuery)
 		if err != nil {
 			return err
 		}
 
-		var status api.BaristaOrderStatus
+		var status proto.BaristaOrderStatus
 		err = v.Get(&status)
 		if err != nil {
 			return err
@@ -71,7 +73,7 @@ var baristaUpdateCmd = &cobra.Command{
 		ctx := context.Background()
 
 		statusName := fmt.Sprintf("BARISTA_ORDER_ITEM_STATUS_%s", strings.ToUpper(args[0]))
-		status, ok := api.BaristaOrderItemStatus_value[statusName]
+		status, ok := proto.BaristaOrderItemStatus_value[statusName]
 		if !ok {
 			return fmt.Errorf("unknown status: %s", args[0])
 		}
@@ -80,10 +82,10 @@ var baristaUpdateCmd = &cobra.Command{
 			ctx,
 			baristaOrderID,
 			"",
-			api.BaristaOrderItemStatusSignal,
-			api.BaristaOrderItemStatusUpdate{
+			proto.BaristaOrderItemStatusSignal,
+			proto.BaristaOrderItemStatusUpdate{
 				Line:   uint32(baristaOrderItemNumber),
-				Status: api.BaristaOrderItemStatus(status),
+				Status: proto.BaristaOrderItemStatus(status),
 			},
 		)
 		if err != nil {
@@ -94,6 +96,26 @@ var baristaUpdateCmd = &cobra.Command{
 		fmt.Printf("Sent update: %d:\t[%s]\n", baristaOrderItemNumber, args[0])
 
 		return nil
+	},
+}
+
+var baristaBoardCmd = &cobra.Command{
+	Use:   "board",
+	Short: "Show barista order board",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		b := ui.BaristaBoard{}
+
+		f, err := tea.LogToFile("debug.log", "debug")
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		p := tea.NewProgram(b, tea.WithAltScreen())
+		_, err = p.Run()
+
+		return err
 	},
 }
 
@@ -108,5 +130,6 @@ func init() {
 
 	baristaCmd.AddCommand(baristaStatusCmd)
 	baristaCmd.AddCommand(baristaUpdateCmd)
+	baristaCmd.AddCommand(baristaBoardCmd)
 	rootCmd.AddCommand(baristaCmd)
 }
