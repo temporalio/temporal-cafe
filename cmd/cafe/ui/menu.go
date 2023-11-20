@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -59,22 +62,8 @@ func newMenu() Menu {
 	return Menu{}
 }
 
-func (m Menu) load() tea.Msg {
-	return menuMsg{
-		&api.Menu{
-			Items: []api.MenuItem{
-				{Name: "Coffee", Type: "beverage", Price: 300},
-				{Name: "Latte", Type: "beverage", Price: 350},
-				{Name: "Milkshake", Type: "beverage", Price: 450},
-				{Name: "Bagel", Type: "food", Price: 500},
-				{Name: "Sandwich", Type: "food", Price: 600},
-			},
-		},
-	}
-}
-
 func (m Menu) Init() tea.Cmd {
-	return m.load
+	return m.fetchMenu
 }
 
 func (m Menu) Update(msg tea.Msg) (Menu, tea.Cmd) {
@@ -123,6 +112,28 @@ func (m Menu) View() string {
 	}
 
 	return menuFrame.Render(lipgloss.JoinVertical(lipgloss.Left, out...))
+}
+
+func (m *Menu) fetchMenu() tea.Msg {
+	c := &http.Client{}
+	r, err := c.Get("http://localhost:8084/menu")
+	if err != nil {
+		log.Printf("Error: %v", err)
+		return statusMsg{err: err}
+	}
+	defer r.Body.Close()
+
+	if r.StatusCode < 200 || r.StatusCode >= 300 {
+		return statusMsg{err: fmt.Errorf("api request failed with code: %d", r.StatusCode)}
+	}
+
+	var menuJSON api.Menu
+	err = json.NewDecoder(r.Body).Decode(&menuJSON)
+	if err != nil {
+		return statusMsg{err: err}
+	}
+
+	return menuMsg{menu: &menuJSON}
 }
 
 func (m *Menu) focusPrevious() tea.Cmd {

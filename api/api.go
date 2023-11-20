@@ -34,6 +34,21 @@ func convertItemAPIToProto(item *OrderItem) (*proto.OrderLineItem, error) {
 	}, nil
 }
 
+func (h *handlers) handleMenuFetch(w http.ResponseWriter, r *http.Request) {
+	menu := Menu{
+		Items: []MenuItem{
+			{Name: "Coffee", Type: "beverage", Price: 300},
+			{Name: "Latte", Type: "beverage", Price: 350},
+			{Name: "Milkshake", Type: "beverage", Price: 450},
+			{Name: "Bagel", Type: "food", Price: 500},
+			{Name: "Sandwich", Type: "food", Price: 600},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(menu)
+}
+
 func (h *handlers) handleOrdersCreate(w http.ResponseWriter, r *http.Request) {
 	var input Order
 
@@ -79,6 +94,8 @@ func Router(c client.Client) *mux.Router {
 	r := mux.NewRouter()
 
 	h := handlers{temporalClient: c}
+
+	r.HandleFunc("/menu", h.handleMenuFetch).Methods("GET").Name("menu_fetch")
 
 	r.HandleFunc("/orders", h.handleOrdersCreate).Methods("POST").Name("orders_create")
 	r.HandleFunc("/barista/orders", h.handleBaristaOrderList).Methods("GET").Name("barista_orders_list")
