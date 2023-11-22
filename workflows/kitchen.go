@@ -14,6 +14,9 @@ type KitchenOrderWorfklow struct {
 
 func (s *KitchenOrderWorfklow) signalFulfilmentStarted(ctx workflow.Context) error {
 	we := workflow.GetInfo(ctx).ParentWorkflowExecution
+	if we == nil {
+		return nil
+	}
 	signal := workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, proto.OrderFulfilmentStartedSignal, nil)
 	return signal.Get(ctx, nil)
 }
