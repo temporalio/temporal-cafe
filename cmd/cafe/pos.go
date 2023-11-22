@@ -6,9 +6,9 @@ import (
 	"github.com/temporalio/temporal-cafe/cmd/cafe/ui"
 )
 
-var orderCmd = &cobra.Command{
-	Use:   "order item ...",
-	Short: "Place an order",
+var posCmd = &cobra.Command{
+	Use:   "pos",
+	Short: "Point of Sale",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		b := ui.NewPOS()
@@ -27,5 +27,5 @@ var orderCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(orderCmd)
+	rootCmd.AddCommand(posCmd)
 }
