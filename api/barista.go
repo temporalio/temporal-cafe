@@ -15,6 +15,26 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
+func baristaStatusToOrder(id string, status *proto.BaristaOrderStatus) BaristaOrder {
+	order := BaristaOrder{
+		ID:   id,
+		Name: status.Name,
+		Open: status.Open,
+	}
+
+	for _, item := range status.Items {
+		status := item.Status.String()
+		status = strings.TrimPrefix(status, "BARISTA_ORDER_ITEM_STATUS_")
+		status = strings.ToLower(status)
+		order.Items = append(order.Items, BaristaOrderItem{
+			Name:   item.Name,
+			Status: status,
+		})
+	}
+
+	return order
+}
+
 func (h *handlers) getOpenBaristaOrderIDs(ctx context.Context) ([]string, error) {
 	var nextPageToken []byte
 	var orderIDs []string
@@ -61,23 +81,7 @@ func (h *handlers) getBaristaOrderStatus(ctx context.Context, id string) (Barist
 		return BaristaOrder{}, err
 	}
 
-	order := BaristaOrder{
-		ID:   id,
-		Name: status.Name,
-		Open: status.Open,
-	}
-	for _, item := range status.Items {
-		status := item.Status.String()
-		status = strings.TrimPrefix(status, "BARISTA_ORDER_ITEM_STATUS_")
-		status = strings.ToLower(status)
-		order.Items = append(order.Items, BaristaOrderItem{
-			Name:   item.Name,
-			Status: status,
-		})
-	}
-
-	return order, nil
-
+	return baristaStatusToOrder(id, &status), nil
 }
 
 func (h *handlers) handleBaristaOrderList(w http.ResponseWriter, r *http.Request) {

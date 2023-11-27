@@ -15,6 +15,26 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
+func kitchenStatusToOrder(id string, status *proto.KitchenOrderStatus) KitchenOrder {
+	order := KitchenOrder{
+		ID:   id,
+		Name: status.Name,
+		Open: status.Open,
+	}
+
+	for _, item := range status.Items {
+		status := item.Status.String()
+		status = strings.TrimPrefix(status, "KITCHEN_ORDER_ITEM_STATUS_")
+		status = strings.ToLower(status)
+		order.Items = append(order.Items, KitchenOrderItem{
+			Name:   item.Name,
+			Status: status,
+		})
+	}
+
+	return order
+}
+
 func (h *handlers) getOpenKitchenOrderIDs(ctx context.Context) ([]string, error) {
 	var nextPageToken []byte
 	var orderIDs []string
@@ -61,23 +81,7 @@ func (h *handlers) getKitchenOrderStatus(ctx context.Context, id string) (Kitche
 		return KitchenOrder{}, err
 	}
 
-	order := KitchenOrder{
-		ID:   id,
-		Name: status.Name,
-		Open: status.Open,
-	}
-	for _, item := range status.Items {
-		status := item.Status.String()
-		status = strings.TrimPrefix(status, "BARISTA_ORDER_ITEM_STATUS_")
-		status = strings.ToLower(status)
-		order.Items = append(order.Items, KitchenOrderItem{
-			Name:   item.Name,
-			Status: status,
-		})
-	}
-
-	return order, nil
-
+	return kitchenStatusToOrder(id, &status), nil
 }
 
 func (h *handlers) handleKitchenOrderList(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +120,7 @@ func (h *handlers) handleKitchenOrderItemStatusUpdate(w http.ResponseWriter, r *
 
 	s, _ := io.ReadAll(r.Body)
 	statusJSON := string(s)
-	statusJSON = "BARISTA_ORDER_ITEM_STATUS_" + strings.ToUpper(statusJSON)
+	statusJSON = "KITCHEN_ORDER_ITEM_STATUS_" + strings.ToUpper(statusJSON)
 	status, ok := proto.KitchenOrderItemStatus_value[statusJSON]
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown item status: %s", statusJSON), http.StatusInternalServerError)
