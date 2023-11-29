@@ -98,20 +98,27 @@ func (m Order) View() string {
 	}
 
 	items := []string{}
+	total := uint32(0)
 	for _, item := range m.order.Items {
 		if item.Count == 0 {
 			continue
 		}
-		items = append(items, fmt.Sprintf("%s x %d", item.Name, item.Count))
+		total += item.Price * item.Count
+		items = append(items, fmt.Sprintf("%s (%s) x %d", item.Name, formatPrice(item.Price), item.Count))
 	}
+	items = append(items, "", fmt.Sprintf("Total: %s", formatPrice(total)))
 
 	if len(items) > 0 {
-		out = append(out, "\n", lipgloss.JoinVertical(lipgloss.Left, items...), "\n", m.submit.View())
+		out = append(out, "", lipgloss.JoinVertical(lipgloss.Left, items...), "", m.submit.View())
 	}
 
 	return orderFrame.Render(
 		lipgloss.JoinVertical(lipgloss.Left, out...),
 	)
+}
+
+func formatPrice(p uint32) string {
+	return fmt.Sprintf("$%.2f", float32(p)/100)
 }
 
 func (m *Order) updateFocused(msg tea.Msg) tea.Cmd {
