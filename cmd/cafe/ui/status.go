@@ -48,11 +48,8 @@ func (m StatusBar) Init() tea.Cmd {
 func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
-		if msg.err != nil {
-			m.err = msg.err
-		} else {
-			m.status = msg.status
-		}
+		m.err = msg.err
+		m.status = msg.status
 
 		return m, m.timeoutStatus(statusResetDelay)
 	}
