@@ -9,6 +9,30 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
+type baristaUpdateCallback struct {
+	accept   func()
+	reject   func(error)
+	complete func(interface{}, error)
+}
+
+func (uc *baristaUpdateCallback) Accept() {
+	if uc.accept != nil {
+		uc.accept()
+	}
+}
+
+func (uc *baristaUpdateCallback) Reject(err error) {
+	if uc.reject != nil {
+		uc.reject(err)
+	}
+}
+
+func (uc *baristaUpdateCallback) Complete(success interface{}, err error) {
+	if uc.complete != nil {
+		uc.complete(success, err)
+	}
+}
+
 func TestBaristaWorkflow(t *testing.T) {
 	s := testsuite.WorkflowTestSuite{}
 	env := s.NewTestWorkflowEnvironment()
@@ -23,19 +47,38 @@ func TestBaristaWorkflow(t *testing.T) {
 	}
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow(
-			proto.BaristaOrderItemStatusSignal,
-			proto.BaristaOrderItemStatusUpdate{Line: 1, Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED},
-		)
+		uc := baristaUpdateCallback{
+			reject: func(err error) {
+				t.Error(err)
+			},
+		}
 
-		env.SignalWorkflow(
+		env.UpdateWorkflow(
 			proto.BaristaOrderItemStatusSignal,
-			proto.BaristaOrderItemStatusUpdate{Line: 2, Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED},
+			"",
+			&uc,
+			&proto.BaristaOrderItemStatusUpdate{
+				Line:   1,
+				Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+			},
 		)
-
-		env.SignalWorkflow(
+		env.UpdateWorkflow(
 			proto.BaristaOrderItemStatusSignal,
-			proto.BaristaOrderItemStatusUpdate{Line: 3, Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED},
+			"",
+			&uc,
+			&proto.BaristaOrderItemStatusUpdate{
+				Line:   2,
+				Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+			},
+		)
+		env.UpdateWorkflow(
+			proto.BaristaOrderItemStatusSignal,
+			"",
+			&uc,
+			&proto.BaristaOrderItemStatusUpdate{
+				Line:   3,
+				Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
+			},
 		)
 	}, 1)
 

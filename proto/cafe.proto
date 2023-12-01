@@ -11,11 +11,11 @@ service Cafe {
 
   rpc KitchenOrder(KitchenOrderInput) returns (KitchenOrderResult) {}
   rpc KitchenOrderStatusQuery(google.protobuf.Empty) returns (KitchenOrderStatus) {}
-  rpc KitchenOrderItemStatusSignal(KitchenOrderItemStatusUpdate) returns (google.protobuf.Empty) {}
+  rpc KitchenOrderItemStatusSignal(KitchenOrderItemStatusUpdate) returns (KitchenOrderStatus) {}
   
   rpc BaristaOrder(BaristaOrderInput) returns (BaristaOrderResult) {}
   rpc BaristaOrderStatusQuery(google.protobuf.Empty) returns (BaristaOrderStatus) {}
-  rpc BaristaOrderItemStatusSignal(BaristaOrderItemStatusUpdate) returns (google.protobuf.Empty) {}
+  rpc BaristaOrderItemStatusSignal(BaristaOrderItemStatusUpdate) returns (BaristaOrderItemStatusUpdate) {}
 
   rpc CustomerLoyaltyPointsEarnedSignal(CustomerLoyaltyPointsEarned) returns (google.protobuf.Empty) {}
   rpc CustomerLoyaltyPointsBalanceQuery(CustomerLoyaltyPointsBalance) returns (CustomerLoyaltyPointsBalance) {}

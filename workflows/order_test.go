@@ -39,54 +39,12 @@ func TestOrderWorkflow(t *testing.T) {
 		},
 	}
 
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *workflow.Info, ctx workflow.Context, args converter.EncodedValues) {
-		wid := workflowInfo.WorkflowExecution.ID
+	env.OnWorkflow(workflows.BaristaOrder, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, input *proto.BaristaOrderInput) (*proto.BaristaOrderResult, error) {
+		return &proto.BaristaOrderResult{}, nil
+	})
 
-		if workflowInfo.WorkflowType.Name == "BaristaOrder" {
-			env.SignalWorkflowByID(
-				wid,
-				proto.BaristaOrderItemStatusSignal,
-				proto.BaristaOrderItemStatusUpdate{
-					Line:   1,
-					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-			env.SignalWorkflowByID(
-				wid,
-				proto.BaristaOrderItemStatusSignal,
-				proto.BaristaOrderItemStatusUpdate{
-					Line:   2,
-					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-			env.SignalWorkflowByID(
-				wid,
-				proto.BaristaOrderItemStatusSignal,
-				proto.BaristaOrderItemStatusUpdate{
-					Line:   3,
-					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-		}
-
-		if workflowInfo.WorkflowType.Name == "KitchenOrder" {
-			env.SignalWorkflowByID(
-				wid,
-				proto.KitchenOrderItemStatusSignal,
-				proto.KitchenOrderItemStatusUpdate{
-					Line:   1,
-					Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-			env.SignalWorkflowByID(
-				wid,
-				proto.KitchenOrderItemStatusSignal,
-				proto.KitchenOrderItemStatusUpdate{
-					Line:   2,
-					Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-		}
+	env.OnWorkflow(workflows.KitchenOrder, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, input *proto.KitchenOrderInput) (*proto.KitchenOrderResult, error) {
+		return &proto.KitchenOrderResult{}, nil
 	})
 
 	env.OnActivity(activities.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentInput) (*proto.ProcessPaymentResult, error) {
@@ -141,19 +99,12 @@ func TestOrderWorkflowFulfilmentDeadline(t *testing.T) {
 		},
 	}
 
-	env.SetOnChildWorkflowStartedListener(func(workflowInfo *workflow.Info, ctx workflow.Context, args converter.EncodedValues) {
-		wid := workflowInfo.WorkflowExecution.ID
+	env.OnWorkflow(workflows.BaristaOrder, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, input *proto.BaristaOrderInput) (*proto.BaristaOrderResult, error) {
+		return &proto.BaristaOrderResult{}, fmt.Errorf("failed")
+	})
 
-		if workflowInfo.WorkflowType.Name == "BaristaOrder" {
-			env.SignalWorkflowByID(
-				wid,
-				proto.BaristaOrderItemStatusSignal,
-				proto.BaristaOrderItemStatusUpdate{
-					Line:   1,
-					Status: proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED,
-				},
-			)
-		}
+	env.OnWorkflow(workflows.KitchenOrder, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, input *proto.KitchenOrderInput) (*proto.KitchenOrderResult, error) {
+		return &proto.KitchenOrderResult{}, nil
 	})
 
 	env.OnActivity(activities.ProcessPayment, mock.Anything, mock.Anything).Return(func(ctx context.Context, input *proto.ProcessPaymentInput) (*proto.ProcessPaymentResult, error) {
