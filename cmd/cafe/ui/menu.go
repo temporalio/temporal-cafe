@@ -155,6 +155,10 @@ func (m *Menu) focusNext() tea.Cmd {
 }
 
 func (m Menu) updateFocused(msg tea.Msg) tea.Cmd {
+	if len(m.items) == 0 {
+		return nil
+	}
+
 	i, cmd := m.items[m.focusItem].Update(msg)
 	m.items[m.focusItem] = i
 

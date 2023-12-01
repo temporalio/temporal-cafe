@@ -59,14 +59,16 @@ func (m StatusBar) Update(msg tea.Msg) (StatusBar, tea.Cmd) {
 
 func (m StatusBar) View() string {
 	f := faintStatusBarFrame
-	if m.status != "" {
-		f = statusBarFrame
-	}
+	s := m.status
+
 	if m.err != nil {
 		f = errorStatusBarFrame
+		s = m.err.Error()
+	} else if m.status != "" {
+		f = statusBarFrame
 	}
 
-	return f.Render(m.status)
+	return f.Render(s)
 }
 
 func (m StatusBar) timeoutStatus(delay time.Duration) tea.Cmd {
