@@ -127,7 +127,7 @@ func (h *handlers) handleKitchenOrderItemStatusUpdate(w http.ResponseWriter, r *
 		return
 	}
 
-	err = h.temporalClient.SignalWorkflow(
+	update, err := h.temporalClient.UpdateWorkflow(
 		r.Context(),
 		id,
 		"",
@@ -142,12 +142,13 @@ func (h *handlers) handleKitchenOrderItemStatusUpdate(w http.ResponseWriter, r *
 		return
 	}
 
-	order, err := h.getKitchenOrderStatus(r.Context(), id)
+	var order proto.KitchenOrderStatus
+	err = update.Get(r.Context(), &order)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(order)
+	json.NewEncoder(w).Encode(kitchenStatusToOrder(id, &order))
 }

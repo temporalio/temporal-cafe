@@ -9,6 +9,30 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
+type kitchenUpdateCallback struct {
+	accept   func()
+	reject   func(error)
+	complete func(interface{}, error)
+}
+
+func (uc *kitchenUpdateCallback) Accept() {
+	if uc.accept != nil {
+		uc.accept()
+	}
+}
+
+func (uc *kitchenUpdateCallback) Reject(err error) {
+	if uc.reject != nil {
+		uc.reject(err)
+	}
+}
+
+func (uc *kitchenUpdateCallback) Complete(success interface{}, err error) {
+	if uc.complete != nil {
+		uc.complete(success, err)
+	}
+}
+
 func TestKitchenWorkflow(t *testing.T) {
 	s := testsuite.WorkflowTestSuite{}
 	env := s.NewTestWorkflowEnvironment()
@@ -23,14 +47,29 @@ func TestKitchenWorkflow(t *testing.T) {
 	}
 
 	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow(
-			proto.KitchenOrderItemStatusSignal,
-			proto.KitchenOrderItemStatusUpdate{Line: 1, Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED},
-		)
+		uc := kitchenUpdateCallback{
+			reject: func(err error) {
+				t.Error(err)
+			},
+		}
 
-		env.SignalWorkflow(
+		env.UpdateWorkflow(
 			proto.KitchenOrderItemStatusSignal,
-			proto.KitchenOrderItemStatusUpdate{Line: 2, Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED},
+			"",
+			&uc,
+			&proto.KitchenOrderItemStatusUpdate{
+				Line:   1,
+				Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
+			},
+		)
+		env.UpdateWorkflow(
+			proto.KitchenOrderItemStatusSignal,
+			"",
+			&uc,
+			&proto.KitchenOrderItemStatusUpdate{
+				Line:   2,
+				Status: proto.KitchenOrderItemStatus_KITCHEN_ORDER_ITEM_STATUS_COMPLETED,
+			},
 		)
 	}, 1)
 

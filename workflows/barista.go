@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/temporalio/temporal-cafe/proto"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
 type BaristaOrderWorfklow struct {
-	Status *proto.BaristaOrderStatus
-	err    error
+	Status           *proto.BaristaOrderStatus
+	fulfilmentSignal bool
+	err              error
 }
 
 func NewBaristaOrderWorkflow(name string, items []*proto.OrderLineItem) *BaristaOrderWorfklow {
@@ -41,69 +41,58 @@ func BaristaOrder(ctx workflow.Context, input *proto.BaristaOrderInput) (*proto.
 }
 
 func (s *BaristaOrderWorfklow) waitForItems(ctx workflow.Context) error {
-	sel := workflow.NewSelector(ctx)
+	if err := workflow.SetUpdateHandlerWithOptions(
+		ctx,
+		proto.BaristaOrderItemStatusSignal,
+		s.updateItemHandler,
+		workflow.UpdateHandlerOptions{Validator: func(ctx workflow.Context, req *proto.BaristaOrderItemStatusUpdate) error {
+			return s.updateItemValidator(req)
+		}},
+	); err != nil {
+		return err
+	}
 
-	var fulfilmentStarted = false
-	var fulfilmentSignalled = false
-
-	// Listen for signals from Barista staff
-	ch := workflow.GetSignalChannel(ctx, proto.BaristaOrderItemStatusSignal)
-	sel.AddReceive(ch, func(c workflow.ReceiveChannel, _ bool) {
-		var signal proto.BaristaOrderItemStatusUpdate
-		c.Receive(ctx, &signal)
-
-		if err := s.updateItem(ctx, signal.Line, signal.Status); err != nil {
-			s.err = err
-			return
-		}
-
-		switch signal.Status {
-		case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_STARTED:
-			fulfilmentStarted = true
-		case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED:
-			fulfilmentStarted = true
-			if s.isOrderCompleted() {
-				s.Status.Open = false
-			}
-		case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_FAILED:
-			s.err = fmt.Errorf("item %d failed", signal.Line)
-			s.Status.Open = false
-		}
+	err := workflow.Await(ctx, func() bool {
+		return !s.Status.Open
 	})
+	if err == nil {
+		err = s.err
+	}
 
-	// Listen for Workflow cancellation
-	sel.AddReceive(ctx.Done(), func(workflow.ReceiveChannel, bool) {
-		s.err = temporal.NewCanceledError()
-	})
+	if errors.Is(err, workflow.ErrCanceled) {
+		return nil
+	}
 
-	for s.Status.Open {
-		sel.Select(ctx)
-		if s.err != nil {
-			if errors.Is(s.err, workflow.ErrCanceled) {
-				return nil
-			}
-			return s.err
-		}
-		if fulfilmentStarted && !fulfilmentSignalled {
-			if err := s.signalFulfilmentStarted(ctx); err != nil {
-				return err
-			}
-			fulfilmentSignalled = true
-		}
+	return err
+}
+
+func (s *BaristaOrderWorfklow) updateItemValidator(req *proto.BaristaOrderItemStatusUpdate) error {
+	if req.Line < 1 || req.Line > uint32(len(s.Status.Items)) {
+		return fmt.Errorf("invalid order item line number %d", req.Line)
 	}
 
 	return nil
 }
 
-func (s *BaristaOrderWorfklow) updateItem(ctx workflow.Context, line uint32, status proto.BaristaOrderItemStatus) error {
-	if line < 1 || line > uint32(len(s.Status.Items)) {
-		return fmt.Errorf("invalid line item: %d", line)
+func (s *BaristaOrderWorfklow) updateItemHandler(ctx workflow.Context, req *proto.BaristaOrderItemStatusUpdate) (*proto.BaristaOrderStatus, error) {
+	// Adjust item line number because array is 0-indexed.
+	s.Status.Items[req.Line-1].Status = req.Status
+
+	switch req.Status {
+	case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_STARTED:
+		if err := s.signalFulfilmentStarted(ctx); err != nil {
+			return nil, err
+		}
+	case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_COMPLETED:
+		if s.isOrderCompleted() {
+			s.Status.Open = false
+		}
+	case proto.BaristaOrderItemStatus_BARISTA_ORDER_ITEM_STATUS_FAILED:
+		s.Status.Open = false
+		s.err = fmt.Errorf("item %d (%s) failed", req.Line, s.Status.Items[req.Line-1].Name)
 	}
 
-	// Adjust item number because array is 0-indexed.
-	s.Status.Items[line-1].Status = status
-
-	return nil
+	return s.Status, nil
 }
 
 func (s *BaristaOrderWorfklow) isOrderCompleted() bool {
@@ -116,10 +105,19 @@ func (s *BaristaOrderWorfklow) isOrderCompleted() bool {
 }
 
 func (s *BaristaOrderWorfklow) signalFulfilmentStarted(ctx workflow.Context) error {
+	if s.fulfilmentSignal {
+		return nil
+	}
+
 	we := workflow.GetInfo(ctx).ParentWorkflowExecution
 	if we == nil {
 		return nil
 	}
 	signal := workflow.SignalExternalWorkflow(ctx, we.ID, we.RunID, proto.OrderFulfilmentStartedSignal, nil)
-	return signal.Get(ctx, nil)
+	if err := signal.Get(ctx, nil); err != nil {
+		return err
+	}
+	s.fulfilmentSignal = true
+
+	return nil
 }
